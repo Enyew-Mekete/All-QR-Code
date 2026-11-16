@@ -12,6 +12,7 @@ import { INITIAL_RESTAURANT } from '../data/initialData';
 import { INITIAL_ROLES, INITIAL_CATEGORIES, INITIAL_THEMES } from '../data/systemDefaults';
 import { NotificationService, SentNotificationRecord } from './notificationService';
 import { ApiClient } from './api';
+import { FileVault } from './fileVault';
 
 const DB_KEY_PREFIX = 'qrcode_generator_postgres_v2_';
 
@@ -777,11 +778,23 @@ export const StorageService = {
   saveQRCodes(qrCodes: RestaurantQRCode[]): void {
     const safeList = Array.isArray(qrCodes) ? qrCodes : [];
     memoryQRCodesFallback = safeList;
+
+    // Persist large inline files into IndexedDB FileVault so reloads/static hosts never lose them
+    safeList.forEach((q) => {
+      if (Array.isArray(q.uploadedFiles)) {
+        q.uploadedFiles.forEach((f) => {
+          if (f?.id && typeof f.url === 'string' && f.url.startsWith('data:')) {
+            FileVault.saveFile(f.id, f.url).catch(() => {});
+          }
+        });
+      }
+    });
+
     try {
       localStorage.setItem(STORAGE_KEYS.QR_CODES, JSON.stringify(safeList));
     } catch {
       // Fallback: strip oversized inline base64 blobs (>150KB) for localStorage metadata persistence;
-      // full files remain in memoryQRCodesFallback and backend API.
+      // full files remain in memoryQRCodesFallback, IndexedDB FileVault, and backend API.
       try {
         const compact = safeList.map((q) => ({
           ...q,
@@ -799,6 +812,13 @@ export const StorageService = {
       }
     }
     notifySync('QR_CODES_UPDATED', safeList);
+  },
+
+  async hydrateFilesFromVault(): Promise<RestaurantQRCode[]> {
+    const all = this.getAllQRCodesIncludingDeleted();
+    const hydrated = await FileVault.hydrateQRCodes(all);
+    memoryQRCodesFallback = hydrated;
+    return this.getQRCodes();
   },
 
   createQRCode(qrCode: RestaurantQRCode): void {

@@ -94,22 +94,38 @@ export default function App() {
     setCurrentUser(StorageService.getCurrentUser());
   }, []);
 
-  // Hydrate initial state from Neon PostgreSQL backend + handle QR scan session
+  // Hydrate initial state from Neon PostgreSQL backend + IndexedDB FileVault + handle QR scan session
   useEffect(() => {
     let mounted = true;
     const session = UrlResolver.detectScanSession();
 
+    // Immediately restore any large uploaded files from IndexedDB FileVault
+    StorageService.hydrateFilesFromVault().then((vaultQRs) => {
+      if (!mounted) return;
+      setQRCodes(vaultQRs);
+      if (session.isScan) {
+        setDirectScanMode(true);
+        const target =
+          (session.qrId && vaultQRs.find((q) => q.id === session.qrId)) || vaultQRs[0];
+        if (target) {
+          setDirectScanQRId(target.id);
+        }
+      }
+    });
+
     ApiClient.bootstrap()
-      .then((boot) => {
+      .then(async (boot) => {
         if (!mounted || !boot.success) return;
         StorageService.hydrateFromBackend(boot);
+        const hydratedQRs = await StorageService.hydrateFilesFromVault();
+        if (!mounted) return;
         refreshAllFromStorage();
+        setQRCodes(hydratedQRs);
 
         if (session.isScan) {
           setDirectScanMode(true);
-          const loadedQRs = StorageService.getQRCodes();
           const target =
-            (session.qrId && loadedQRs.find((q) => q.id === session.qrId)) || loadedQRs[0];
+            (session.qrId && hydratedQRs.find((q) => q.id === session.qrId)) || hydratedQRs[0];
           if (target) {
             setDirectScanQRId(target.id);
             if (!hasRecordedDirectScan.current) {
@@ -128,7 +144,7 @@ export default function App() {
         }
       })
       .catch(() => {
-        // Fallback if backend unavailable
+        // Fallback if backend unavailable (e.g. static host)
         if (session.isScan) {
           setDirectScanMode(true);
           const loadedQRs = StorageService.getQRCodes();

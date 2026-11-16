@@ -30,6 +30,7 @@ import { MobileDeviceFrame } from './MobileDeviceFrame';
 import { QRScanLandingView } from './QRScanLandingView';
 import { QRGeneratorService } from '../services/qrGenerator';
 import { UrlResolver } from '../services/urlResolver';
+import { FileVault } from '../services/fileVault';
 import { INITIAL_RESTAURANT } from '../data/initialData';
 
 interface QRCodeCreatorModalProps {
@@ -137,9 +138,10 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const url = (ev.target?.result as string) || '';
-      setWelcomeLogoUrl(url);
+    reader.onload = async (ev) => {
+      const rawUrl = (ev.target?.result as string) || '';
+      const optimizedUrl = await FileVault.compressImageIfLarge(rawUrl, 800);
+      setWelcomeLogoUrl(optimizedUrl);
       if (welcomeEnabled) setPreviewTab('welcome');
     };
     reader.readAsDataURL(file);
@@ -149,9 +151,10 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const url = (ev.target?.result as string) || '';
-      setCustomCenterLogoUrl(url);
+    reader.onload = async (ev) => {
+      const rawUrl = (ev.target?.result as string) || '';
+      const optimizedUrl = await FileVault.compressImageIfLarge(rawUrl, 800);
+      setCustomCenterLogoUrl(optimizedUrl);
       setLogoInCenter(true);
       setPreviewTab('qr');
     };
@@ -163,14 +166,26 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
     Array.from(files).forEach((file) => {
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        const resultUrl = (ev.target?.result as string) || '';
+      reader.onload = async (ev) => {
+        const rawUrl = (ev.target?.result as string) || '';
+        const finalUrl = isPdf ? rawUrl : await FileVault.compressImageIfLarge(rawUrl, 1600);
+        const fileId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        await FileVault.saveFile(fileId, finalUrl);
+
+        const byteEstimate = Math.max(file.size, Math.round(finalUrl.length * 0.75));
+        const sizeDisplay =
+          finalUrl.length < rawUrl.length
+            ? `${Math.max(10, Math.round((finalUrl.length * 0.75) / 1024))} KB HD`
+            : byteEstimate >= 1024 * 1024
+              ? `${(byteEstimate / (1024 * 1024)).toFixed(1)} MB`
+              : `${Math.max(1, Math.round(byteEstimate / 1024))} KB`;
+
         const newFile: UploadedMenuFile = {
-          id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          id: fileId,
           name: file.name,
           type: isPdf ? 'pdf' : 'image',
-          url: resultUrl,
-          sizeFormatted: `${Math.max(0.1, file.size / (1024 * 1024)).toFixed(1)} MB`,
+          url: finalUrl,
+          sizeFormatted: sizeDisplay,
           uploadedAt: new Date().toISOString(),
           caption: file.name.replace(/\.[^/.]+$/, ''),
         };

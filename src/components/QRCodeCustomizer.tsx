@@ -31,6 +31,7 @@ import { MobileDeviceFrame } from './MobileDeviceFrame';
 import { QRScanLandingView } from './QRScanLandingView';
 import { QRGeneratorService } from '../services/qrGenerator';
 import { UrlResolver } from '../services/urlResolver';
+import { FileVault } from '../services/fileVault';
 
 interface QRCodeCustomizerProps {
   qrCode: RestaurantQRCode;
@@ -108,8 +109,9 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
+    reader.onload = async (event) => {
+      const rawUrl = (event.target?.result as string) || '';
+      const dataUrl = await FileVault.compressImageIfLarge(rawUrl, 800);
       setCurrentQR((prev) => ({
         ...prev,
         welcomeScreen: {
@@ -127,8 +129,9 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
+    reader.onload = async (event) => {
+      const rawUrl = (event.target?.result as string) || '';
+      const dataUrl = await FileVault.compressImageIfLarge(rawUrl, 800);
       setCurrentQR((prev) => ({
         ...prev,
         styling: {
@@ -147,14 +150,26 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
     Array.from(files).forEach((file) => {
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       const reader = new FileReader();
-      reader.onload = (e) => {
-        const resultUrl = e.target?.result as string;
+      reader.onload = async (e) => {
+        const rawUrl = (e.target?.result as string) || '';
+        const finalUrl = isPdf ? rawUrl : await FileVault.compressImageIfLarge(rawUrl, 1600);
+        const fileId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        await FileVault.saveFile(fileId, finalUrl);
+
+        const byteEstimate = Math.max(file.size, Math.round(finalUrl.length * 0.75));
+        const sizeDisplay =
+          finalUrl.length < rawUrl.length
+            ? `${Math.max(10, Math.round((finalUrl.length * 0.75) / 1024))} KB HD`
+            : byteEstimate >= 1024 * 1024
+              ? `${(byteEstimate / (1024 * 1024)).toFixed(1)} MB`
+              : `${Math.max(1, Math.round(byteEstimate / 1024))} KB`;
+
         const newFile: UploadedMenuFile = {
-          id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          id: fileId,
           name: file.name,
           type: isPdf ? 'pdf' : 'image',
-          url: resultUrl,
-          sizeFormatted: `${Math.max(0.1, file.size / (1024 * 1024)).toFixed(1)} MB`,
+          url: finalUrl,
+          sizeFormatted: sizeDisplay,
           uploadedAt: new Date().toISOString(),
           caption: file.name.replace(/\.[^/.]+$/, ''),
         };

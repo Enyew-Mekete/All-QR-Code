@@ -26,6 +26,7 @@ import {
   RestaurantQRCode,
   UploadedMenuFile,
 } from '../types';
+import { FileVault } from '../services/fileVault';
 
 interface QRScanLandingViewProps {
   qrCode: RestaurantQRCode | null;
@@ -69,8 +70,8 @@ export const QRScanLandingView: React.FC<QRScanLandingViewProps> = ({
   }, [qrCode?.id, qrCode?.welcomeScreen?.enabled]);
 
   // Resolve active file unconditionally so hooks remain top-level
-  const resolvedFiles: UploadedMenuFile[] = qrCode
-    ? qrCode.uploadedFiles && qrCode.uploadedFiles.length > 0
+  const rawQrFiles: UploadedMenuFile[] = qrCode
+    ? Array.isArray(qrCode.uploadedFiles) && qrCode.uploadedFiles.length > 0
       ? qrCode.uploadedFiles
       : qrCode.type === 'restaurant_menu' ||
           qrCode.type === 'table_standee' ||
@@ -78,8 +79,33 @@ export const QRScanLandingView: React.FC<QRScanLandingViewProps> = ({
         ? restaurant.uploadedMenuFiles || []
         : []
     : [];
+  const validFiles = rawQrFiles.filter((f) => f && f.url && f.url.trim() !== '');
+  const resolvedFiles: UploadedMenuFile[] =
+    validFiles.length > 0
+      ? validFiles
+      : qrCode &&
+          (qrCode.type === 'restaurant_menu' ||
+            qrCode.type === 'table_standee' ||
+            qrCode.type === 'business_list')
+        ? (restaurant.uploadedMenuFiles || []).filter((f) => f && f.url && f.url.trim() !== '')
+        : [];
   const resolvedSafeIndex = Math.min(activeDocIndex, Math.max(0, resolvedFiles.length - 1));
   const resolvedActiveFile = resolvedFiles[resolvedSafeIndex];
+  const [vaultRestoredUrl, setVaultRestoredUrl] = useState<string | null>(null);
+
+  // If raw file had an empty url (stripped from localStorage), try restoring from IndexedDB FileVault
+  const firstRawMissing = rawQrFiles.find((f) => f && (!f.url || f.url.trim() === ''));
+  useEffect(() => {
+    let active = true;
+    setVaultRestoredUrl(null);
+    if (!firstRawMissing?.id) return;
+    FileVault.getFile(firstRawMissing.id).then((restored) => {
+      if (active && restored) setVaultRestoredUrl(restored);
+    });
+    return () => {
+      active = false;
+    };
+  }, [firstRawMissing?.id]);
 
   useEffect(() => {
     if (!resolvedActiveFile || resolvedActiveFile.type !== 'pdf') {
@@ -219,9 +245,12 @@ export const QRScanLandingView: React.FC<QRScanLandingViewProps> = ({
   const meta = getTypeMeta();
   const TypeIcon = meta.Icon;
 
-  const qrFiles = resolvedFiles;
-  const safeIndex = resolvedSafeIndex;
-  const activeFile = resolvedActiveFile;
+  const qrFiles =
+    vaultRestoredUrl && firstRawMissing
+      ? [{ ...firstRawMissing, url: vaultRestoredUrl }, ...resolvedFiles]
+      : resolvedFiles;
+  const safeIndex = Math.min(activeDocIndex, Math.max(0, qrFiles.length - 1));
+  const activeFile = qrFiles[safeIndex];
 
   const displayTitle = qrCode.title || 'QR Content';
   const displayDescription =
