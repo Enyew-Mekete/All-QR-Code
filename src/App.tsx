@@ -313,7 +313,7 @@ export default function App() {
     setIsCreatorOpen(true);
   };
 
-  const handleCreateNewQR = (newQRPartial: Partial<RestaurantQRCode>) => {
+  const handleCreateNewQR = (newQRPartial: Partial<RestaurantQRCode>): RestaurantQRCode => {
     const newQR: RestaurantQRCode = {
       id: `qr_${Date.now()}`,
       restaurantId: restaurant.id,
@@ -345,11 +345,10 @@ export default function App() {
 
     StorageService.createQRCode(newQR);
     setQRCodes(StorageService.getQRCodes());
-    setIsCreatorOpen(false);
     setCreatorDefaultCategoryId(undefined);
-    setEditingQRCode(newQR);
     setActiveSection('QR Codes');
-    addToast(`Created QR Code "${newQR.title}"`, 'success');
+    addToast(`Generated QR Code "${newQR.title}"`, 'success');
+    return newQR;
   };
 
   const handleDuplicateQR = (qr: RestaurantQRCode) => {
@@ -641,6 +640,16 @@ export default function App() {
             setCreatorDefaultCategoryId(undefined);
           }}
           onCreate={handleCreateNewQR}
+          onEditCreated={(qr) => {
+            setIsCreatorOpen(false);
+            setCreatorDefaultCategoryId(undefined);
+            setEditingQRCode(qr);
+          }}
+          onPreviewCreated={(qr) => {
+            setIsCreatorOpen(false);
+            setCreatorDefaultCategoryId(undefined);
+            setPreviewScanQR(qr);
+          }}
         />
       )}
 

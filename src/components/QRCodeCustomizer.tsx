@@ -201,6 +201,21 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
     onToast('Saved & downloaded full-resolution PNG QR code.', 'success');
   };
 
+  const handleDownloadSvg = async () => {
+    onSave(currentQR, currentRestaurant);
+    const scanUrl = UrlResolver.getScanUrl(currentQR);
+    const svg = await QRGeneratorService.generateSvgString(scanUrl, currentQR.styling);
+    if (!svg) return;
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+    QRGeneratorService.downloadImage(
+      blobUrl,
+      `${currentQR.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_qr.svg`
+    );
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    onToast('Saved & downloaded SVG QR code.', 'success');
+  };
+
   const handleSave = () => {
     onSave(currentQR, currentRestaurant);
     onToast(`Saved changes to "${currentQR.title}".`, 'success');
@@ -234,7 +249,7 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
           <button
             type="button"
             onClick={handleDownloadHighRes}
@@ -242,6 +257,14 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
           >
             <Download className="w-4 h-4" />
             <span>Download HD</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadSvg}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+          >
+            <Download className="w-4 h-4" />
+            <span>SVG</span>
           </button>
           <button
             type="button"

@@ -19,9 +19,9 @@ async function startServer() {
   // Initialize Neon PostgreSQL schema & initial seed data
   await initDatabase();
 
-  // Body parsers (15mb supports HD uploaded welcome logos & menu sheets)
-  app.use(express.json({ limit: '15mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+  // Body parsers (50mb supports HD uploaded welcome logos, images & PDFs)
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Backend REST API routes
   app.use('/api', apiRouter);

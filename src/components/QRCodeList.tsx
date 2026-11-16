@@ -4,7 +4,6 @@ import {
   Search,
   Download,
   ExternalLink,
-  Palette,
   MoreVertical,
   QrCode,
   Check,
@@ -15,6 +14,7 @@ import {
   Trash2,
   ChevronDown,
   Smartphone,
+  Edit3,
 } from 'lucide-react';
 import {
   CustomThemeSetting,
@@ -415,7 +415,29 @@ export const QRCodeList: React.FC<QRCodeListProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadQR(qr)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      title="Download High-Res PNG"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Download</span>
+                    </button>
+
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => onEdit(qr)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        title="Edit QR Code, Files, Welcome Screen & Design"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => onOpenScanPreview(qr)}
@@ -434,17 +456,6 @@ export const QRCodeList: React.FC<QRCodeListProps> = ({
                       <Printer className="w-4 h-4" />
                     </button>
 
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => onEdit(qr)}
-                        className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                        title="Customize QR & Welcome Screen"
-                      >
-                        <Palette className="w-4 h-4" />
-                      </button>
-                    )}
-
                     <div className="relative">
                       <button
                         type="button"
@@ -456,6 +467,19 @@ export const QRCodeList: React.FC<QRCodeListProps> = ({
 
                       {activeMenuId === qr.id && (
                         <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-40 text-xs">
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onEdit(qr);
+                                setActiveMenuId(null);
+                              }}
+                              className="w-full text-left px-3 py-2 text-slate-800 font-semibold hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Edit QR Code</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
@@ -557,6 +581,14 @@ export const QRCodeList: React.FC<QRCodeListProps> = ({
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
+                    onClick={() => handleDownloadQR(qr)}
+                    className="p-1.5 text-slate-700 hover:text-slate-900 rounded-lg hover:bg-slate-100 cursor-pointer"
+                    title="Download HD PNG"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => onOpenScanPreview(qr)}
                     className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 cursor-pointer"
                     title="Preview Scan View"
@@ -567,10 +599,11 @@ export const QRCodeList: React.FC<QRCodeListProps> = ({
                     <button
                       type="button"
                       onClick={() => onEdit(qr)}
-                      className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 cursor-pointer"
-                      title="Customize"
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg text-[11px] font-bold cursor-pointer"
+                      title="Edit QR Code"
                     >
-                      <Palette className="w-4 h-4" />
+                      <Edit3 className="w-3 h-3" />
+                      <span>Edit</span>
                     </button>
                   )}
                   {canDelete && (
