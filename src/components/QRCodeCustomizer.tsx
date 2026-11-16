@@ -137,6 +137,7 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
           customLogoUrl: dataUrl,
         },
       }));
+      setActivePreviewTab('qr');
     };
     reader.readAsDataURL(file);
   };
@@ -768,21 +769,42 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
                           <ImageIcon className="w-5 h-5 text-slate-400" />
                         )}
                       </div>
-                      <input
-                        ref={qrLogoFileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleQRMiddleLogoUpload}
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => qrLogoFileInputRef.current?.click()}
-                        className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Upload Center Logo</span>
-                      </button>
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <input
+                          ref={qrLogoFileInputRef}
+                          type="file"
+                          accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+                          onChange={handleQRMiddleLogoUpload}
+                          className="hidden"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => qrLogoFileInputRef.current?.click()}
+                            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Upload Center Logo</span>
+                          </button>
+                          {currentQR.styling.customLogoUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCurrentQR({
+                                  ...currentQR,
+                                  styling: { ...currentQR.styling, customLogoUrl: undefined },
+                                })
+                              }
+                              className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg font-semibold cursor-pointer"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Upload custom logo image (PNG, JPG, SVG) to display in center.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>

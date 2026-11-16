@@ -97,11 +97,16 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
   const [welcomeSubheadline, setWelcomeSubheadline] = useState<string>('');
   const [welcomeButtonText, setWelcomeButtonText] = useState<string>('Continue');
 
+  // QR Center Logo config
+  const [logoInCenter, setLogoInCenter] = useState<boolean>(true);
+  const [customCenterLogoUrl, setCustomCenterLogoUrl] = useState<string>('');
+
   // Live Preview controls BEFORE creating/generating
   const [previewTab, setPreviewTab] = useState<'welcome' | 'content' | 'qr'>('welcome');
   const [liveQrImg, setLiveQrImg] = useState<string>('');
 
   const welcomeLogoRef = useRef<HTMLInputElement>(null);
+  const centerLogoRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   const createBtn = getDistinctCreateQRTheme(theme);
 
@@ -120,6 +125,19 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
       const url = (ev.target?.result as string) || '';
       setWelcomeLogoUrl(url);
       if (welcomeEnabled) setPreviewTab('welcome');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUploadCenterLogo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const url = (ev.target?.result as string) || '';
+      setCustomCenterLogoUrl(url);
+      setLogoInCenter(true);
+      setPreviewTab('qr');
     };
     reader.readAsDataURL(file);
   };
@@ -158,6 +176,8 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
     setWelcomeHeadline("Guansa Ma'ed");
     setWelcomeSubheadline('GOOD FOOD · GOOD MOOD — Tap below to view our menu');
     setWelcomeButtonText('View Menu');
+    setLogoInCenter(true);
+    setCustomCenterLogoUrl('/assets/guansa_logo.png');
     setUploadedFiles([
       {
         id: `sample_menu_${Date.now()}`,
@@ -195,8 +215,8 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
         frameStyle: 'scan-me',
         frameText: presetMeta.cta,
         dotStyle: 'rounded',
-        logoInCenter: Boolean(welcomeLogoUrl),
-        customLogoUrl: welcomeLogoUrl || undefined,
+        logoInCenter: logoInCenter && Boolean(customCenterLogoUrl || welcomeLogoUrl),
+        customLogoUrl: (customCenterLogoUrl || welcomeLogoUrl) || undefined,
         size: 280,
       },
       welcomeScreen: {
@@ -225,6 +245,8 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
     hasExpiry,
     expiresAt,
     createBtn.bg,
+    logoInCenter,
+    customCenterLogoUrl,
     welcomeEnabled,
     welcomeLogoUrl,
     welcomeHeadline,
@@ -265,8 +287,8 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
         frameStyle: 'scan-me',
         frameText: presetMeta.cta,
         dotStyle: 'rounded',
-        logoInCenter: Boolean(welcomeLogoUrl),
-        customLogoUrl: welcomeLogoUrl || undefined,
+        logoInCenter: logoInCenter && Boolean(customCenterLogoUrl || welcomeLogoUrl),
+        customLogoUrl: (customCenterLogoUrl || welcomeLogoUrl) || undefined,
         size: 280,
       },
       welcomeScreen: {
@@ -547,6 +569,69 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
                         placeholder="Short greeting shown when scanned"
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl"
                       />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* QR Center Logo Setup */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="flex items-center gap-2 font-bold text-slate-800">
+                    <ImageIcon className="w-4 h-4 text-slate-700" />
+                    <span>Embed Center Logo inside QR</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={logoInCenter}
+                    onChange={(e) => setLogoInCenter(e.target.checked)}
+                    className="w-4 h-4 rounded cursor-pointer"
+                  />
+                </label>
+
+                {logoInCenter && (
+                  <div className="flex items-center gap-3 pt-2 border-t border-slate-200">
+                    <div className="w-14 h-14 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                      {customCenterLogoUrl || welcomeLogoUrl ? (
+                        <img
+                          src={customCenterLogoUrl || welcomeLogoUrl}
+                          alt="Center Logo"
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <ImageIcon className="w-5 h-5 text-slate-300" />
+                      )}
+                    </div>
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <input
+                        ref={centerLogoRef}
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+                        onChange={handleUploadCenterLogo}
+                        className="hidden"
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => centerLogoRef.current?.click()}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Center Logo</span>
+                        </button>
+                        {customCenterLogoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setCustomCenterLogoUrl('')}
+                            className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg font-semibold cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Upload custom logo image (PNG, JPG, SVG) to display in center.
+                      </p>
                     </div>
                   </div>
                 )}

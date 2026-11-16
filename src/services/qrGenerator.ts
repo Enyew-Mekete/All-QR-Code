@@ -179,7 +179,16 @@ export const QRGeneratorService = {
                 ctx.beginPath();
                 ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
                 ctx.clip();
-                ctx.drawImage(logoImg, logoX, logoY, logoSize, logoSize);
+                ctx.fillStyle = styling.bgColor || '#ffffff';
+                ctx.fillRect(logoX, logoY, logoSize, logoSize);
+                const natW = logoImg.naturalWidth || logoImg.width || logoSize;
+                const natH = logoImg.naturalHeight || logoImg.height || logoSize;
+                const fitScale = Math.min(logoSize / natW, logoSize / natH);
+                const drawW = natW * fitScale;
+                const drawH = natH * fitScale;
+                const drawX = logoX + (logoSize - drawW) / 2;
+                const drawY = logoY + (logoSize - drawH) / 2;
+                ctx.drawImage(logoImg, drawX, drawY, drawW, drawH);
                 ctx.restore();
                 resolve(canvas.toDataURL('image/png'));
               };
