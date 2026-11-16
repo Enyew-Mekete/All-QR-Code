@@ -77,133 +77,141 @@ export const QRGeneratorService = {
         const qrImg = new Image();
         qrImg.crossOrigin = 'anonymous';
         qrImg.onload = () => {
-          const qrSize = (styling.size || 320) * scale;
-          const hasFrame = styling.frameStyle !== 'none';
-          const topExtra = (styling.frameStyle === 'badge-top' || styling.frameStyle === 'table-card' ? 70 : 0) * scale;
-          const bottomExtra = (styling.frameStyle === 'scan-me' || styling.frameStyle === 'table-card' ? 65 : 0) * scale;
+          try {
+            const qrSize = (styling.size || 320) * scale;
+            const hasFrame = styling.frameStyle !== 'none';
+            const topExtra = (styling.frameStyle === 'badge-top' || styling.frameStyle === 'table-card' ? 70 : 0) * scale;
+            const bottomExtra = (styling.frameStyle === 'scan-me' || styling.frameStyle === 'table-card' ? 65 : 0) * scale;
 
-          const totalWidth = qrSize + (hasFrame ? 48 * scale : 0);
-          const totalHeight = qrSize + topExtra + bottomExtra + (hasFrame ? 40 * scale : 0);
+            const totalWidth = qrSize + (hasFrame ? 48 * scale : 0);
+            const totalHeight = qrSize + topExtra + bottomExtra + (hasFrame ? 40 * scale : 0);
 
-          canvas.width = totalWidth;
-          canvas.height = totalHeight;
+            canvas.width = totalWidth;
+            canvas.height = totalHeight;
 
-          // Crisp image rendering
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
+            // Crisp image rendering
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
 
-          // Background
-          ctx.fillStyle = styling.bgColor || '#ffffff';
-          ctx.fillRect(0, 0, totalWidth, totalHeight);
+            // Background
+            ctx.fillStyle = styling.bgColor || '#ffffff';
+            ctx.fillRect(0, 0, totalWidth, totalHeight);
 
-          // Card or border styling
-          if (hasFrame) {
-            ctx.lineWidth = 4 * scale;
-            ctx.strokeStyle = styling.fgColor || '#1e3a2b';
-            ctx.beginPath();
-            ctx.roundRect(8 * scale, 8 * scale, totalWidth - 16 * scale, totalHeight - 16 * scale, 20 * scale);
-            ctx.stroke();
+            // Card or border styling
+            if (hasFrame) {
+              ctx.lineWidth = 4 * scale;
+              ctx.strokeStyle = styling.fgColor || '#1e3a2b';
+              ctx.beginPath();
+              ctx.roundRect(8 * scale, 8 * scale, totalWidth - 16 * scale, totalHeight - 16 * scale, 20 * scale);
+              ctx.stroke();
 
-            // Top Header if applicable
-            if (topExtra > 0) {
+              // Top Header if applicable
+              if (topExtra > 0) {
+                ctx.fillStyle = styling.fgColor || '#1e3a2b';
+                ctx.beginPath();
+                ctx.roundRect(8 * scale, 8 * scale, totalWidth - 16 * scale, 52 * scale, [18 * scale, 18 * scale, 0, 0]);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `bold ${Math.round(15 * scale)}px system-ui, -apple-system, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(
+                  (styling.frameText || options?.tableLabel || options?.restaurantName || 'SCAN TO VIEW MENU').toUpperCase(),
+                  totalWidth / 2,
+                  34 * scale
+                );
+              }
+            }
+
+            // Draw QR Code
+            const qrX = (totalWidth - qrSize) / 2;
+            const qrY = (hasFrame && topExtra > 0 ? topExtra + 12 * scale : hasFrame ? 20 * scale : 0);
+            ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+
+            // Bottom Call To Action Banner if scan-me
+            if (styling.frameStyle === 'scan-me' || (styling.frameStyle === 'table-card' && bottomExtra > 0)) {
+              const bannerY = qrY + qrSize + 8 * scale;
               ctx.fillStyle = styling.fgColor || '#1e3a2b';
               ctx.beginPath();
-              ctx.roundRect(8 * scale, 8 * scale, totalWidth - 16 * scale, 52 * scale, [18 * scale, 18 * scale, 0, 0]);
+              ctx.roundRect(24 * scale, bannerY, totalWidth - 48 * scale, 44 * scale, 12 * scale);
               ctx.fill();
 
               ctx.fillStyle = '#ffffff';
-              ctx.font = `bold ${Math.round(15 * scale)}px system-ui, -apple-system, sans-serif`;
+              ctx.font = `bold ${Math.round(14 * scale)}px system-ui, -apple-system, sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
               ctx.fillText(
-                (styling.frameText || options?.tableLabel || options?.restaurantName || 'SCAN TO VIEW MENU').toUpperCase(),
+                (styling.frameText || 'SCAN TO VIEW MENU').toUpperCase(),
                 totalWidth / 2,
-                34 * scale
+                bannerY + 22 * scale
               );
             }
-          }
 
-          // Draw QR Code
-          const qrX = (totalWidth - qrSize) / 2;
-          const qrY = (hasFrame && topExtra > 0 ? topExtra + 12 * scale : hasFrame ? 20 * scale : 0);
-          ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+            // Center Logo if enabled
+            if (styling.logoInCenter) {
+              const logoPercent = (styling.logoSizePercent || 22) / 100;
+              const logoSize = qrSize * logoPercent;
+              const logoX = qrX + (qrSize - logoSize) / 2;
+              const logoY = qrY + (qrSize - logoSize) / 2;
 
-          // Bottom Call To Action Banner if scan-me
-          if (styling.frameStyle === 'scan-me' || (styling.frameStyle === 'table-card' && bottomExtra > 0)) {
-            const bannerY = qrY + qrSize + 8 * scale;
-            ctx.fillStyle = styling.fgColor || '#1e3a2b';
-            ctx.beginPath();
-            ctx.roundRect(24 * scale, bannerY, totalWidth - 48 * scale, 44 * scale, 12 * scale);
-            ctx.fill();
+              // White rounded backing badge
+              ctx.fillStyle = styling.bgColor || '#ffffff';
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+              ctx.shadowBlur = 8 * scale;
+              ctx.beginPath();
+              ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 5 * scale, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.shadowBlur = 0; // reset shadow
 
-            ctx.fillStyle = '#ffffff';
-            ctx.font = `bold ${Math.round(14 * scale)}px system-ui, -apple-system, sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(
-              (styling.frameText || 'SCAN TO VIEW MENU').toUpperCase(),
-              totalWidth / 2,
-              bannerY + 22 * scale
-            );
-          }
+              // Outer ring
+              ctx.strokeStyle = styling.fgColor || '#1e3a2b';
+              ctx.lineWidth = 2.5 * scale;
+              ctx.beginPath();
+              ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 5 * scale, 0, Math.PI * 2);
+              ctx.stroke();
 
-          // Center Logo if enabled
-          if (styling.logoInCenter) {
-            const logoPercent = (styling.logoSizePercent || 22) / 100;
-            const logoSize = qrSize * logoPercent;
-            const logoX = qrX + (qrSize - logoSize) / 2;
-            const logoY = qrY + (qrSize - logoSize) / 2;
-
-            // White rounded backing badge
-            ctx.fillStyle = styling.bgColor || '#ffffff';
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
-            ctx.shadowBlur = 8 * scale;
-            ctx.beginPath();
-            ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 5 * scale, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.shadowBlur = 0; // reset shadow
-
-            // Outer ring
-            ctx.strokeStyle = styling.fgColor || '#1e3a2b';
-            ctx.lineWidth = 2.5 * scale;
-            ctx.beginPath();
-            ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 5 * scale, 0, Math.PI * 2);
-            ctx.stroke();
-
-            const targetLogoSrc = styling.customLogoUrl || options?.logoSrc;
-            if (targetLogoSrc) {
-              const logoImg = new Image();
-              logoImg.crossOrigin = 'anonymous';
-              logoImg.onload = () => {
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
-                ctx.clip();
-                ctx.fillStyle = styling.bgColor || '#ffffff';
-                ctx.fillRect(logoX, logoY, logoSize, logoSize);
-                const natW = logoImg.naturalWidth || logoImg.width || logoSize;
-                const natH = logoImg.naturalHeight || logoImg.height || logoSize;
-                const fitScale = Math.min(logoSize / natW, logoSize / natH);
-                const drawW = natW * fitScale;
-                const drawH = natH * fitScale;
-                const drawX = logoX + (logoSize - drawW) / 2;
-                const drawY = logoY + (logoSize - drawH) / 2;
-                ctx.drawImage(logoImg, drawX, drawY, drawW, drawH);
-                ctx.restore();
-                resolve(canvas.toDataURL('image/png'));
-              };
-              logoImg.onerror = () => {
+              const targetLogoSrc = styling.customLogoUrl || options?.logoSrc;
+              if (targetLogoSrc) {
+                const logoImg = new Image();
+                logoImg.crossOrigin = 'anonymous';
+                logoImg.onload = () => {
+                  try {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.fillStyle = styling.bgColor || '#ffffff';
+                    ctx.fillRect(logoX, logoY, logoSize, logoSize);
+                    const natW = logoImg.naturalWidth || logoImg.width || logoSize;
+                    const natH = logoImg.naturalHeight || logoImg.height || logoSize;
+                    const fitScale = Math.min(logoSize / natW, logoSize / natH);
+                    const drawW = natW * fitScale;
+                    const drawH = natH * fitScale;
+                    const drawX = logoX + (logoSize - drawW) / 2;
+                    const drawY = logoY + (logoSize - drawH) / 2;
+                    ctx.drawImage(logoImg, drawX, drawY, drawW, drawH);
+                    ctx.restore();
+                    resolve(canvas.toDataURL('image/png'));
+                  } catch {
+                    resolve(rawQrDataUrl);
+                  }
+                };
+                logoImg.onerror = () => {
+                  drawDefaultCenterIcon(ctx, logoX, logoY, logoSize, styling.fgColor, scale);
+                  resolve(canvas.toDataURL('image/png'));
+                };
+                logoImg.src = targetLogoSrc;
+                return;
+              } else {
                 drawDefaultCenterIcon(ctx, logoX, logoY, logoSize, styling.fgColor, scale);
-                resolve(canvas.toDataURL('image/png'));
-              };
-              logoImg.src = targetLogoSrc;
-              return;
-            } else {
-              drawDefaultCenterIcon(ctx, logoX, logoY, logoSize, styling.fgColor, scale);
+              }
             }
-          }
 
-          resolve(canvas.toDataURL('image/png'));
+            resolve(canvas.toDataURL('image/png'));
+          } catch {
+            resolve(rawQrDataUrl);
+          }
         };
 
         qrImg.onerror = () => {

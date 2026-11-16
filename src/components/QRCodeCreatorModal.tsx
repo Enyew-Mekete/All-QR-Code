@@ -356,11 +356,12 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
       };
 
       const scanUrl = UrlResolver.getScanUrl(resultQR);
-      const hdPng = await QRGeneratorService.generateBrandedCanvas(scanUrl, resultQR.styling, {
-        restaurantName: resultQR.title,
-        logoSrc: resultQR.styling.customLogoUrl || resultQR.welcomeScreen?.logoUrl,
-        highRes: true,
-      });
+      const hdPng =
+        (await QRGeneratorService.generateBrandedCanvas(scanUrl, resultQR.styling, {
+          restaurantName: resultQR.title,
+          logoSrc: resultQR.styling.customLogoUrl || resultQR.welcomeScreen?.logoUrl,
+          highRes: true,
+        })) || liveQrImg;
 
       setGeneratedHdImg(hdPng);
       setCreatedQR(resultQR);
@@ -371,8 +372,14 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
           `${resultQR.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_qr_hd.png`
         );
       }
-    } catch {
-      setFormError('Could not generate the QR code. Please check your inputs and try again.');
+    } catch (err) {
+      console.error('QR generation failed:', err);
+      const reason = err instanceof Error ? err.message : String(err || '');
+      setFormError(
+        reason
+          ? `Could not generate the QR code: ${reason}`
+          : 'Could not generate the QR code. Please check your inputs and try again.'
+      );
     } finally {
       setIsGenerating(false);
     }

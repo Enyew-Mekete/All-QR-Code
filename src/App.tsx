@@ -316,8 +316,8 @@ export default function App() {
   const handleCreateNewQR = (newQRPartial: Partial<RestaurantQRCode>): RestaurantQRCode => {
     const newQR: RestaurantQRCode = {
       id: `qr_${Date.now()}`,
-      restaurantId: restaurant.id,
-      categoryId: newQRPartial.categoryId || creatorDefaultCategoryId || categories[0]?.id,
+      restaurantId: restaurant?.id || 'company_qr_01',
+      categoryId: newQRPartial.categoryId || creatorDefaultCategoryId || categories?.[0]?.id,
       title: newQRPartial.title || 'Dynamic QR Code',
       description: newQRPartial.description || '',
       ctaLabel: newQRPartial.ctaLabel || 'See More',

@@ -28,6 +28,10 @@ const STORAGE_KEYS = {
   SESSION: `${DB_KEY_PREFIX}session_user`,
 };
 
+// In-memory session fallback when uploaded images/PDFs exceed browser ~5MB localStorage quota
+let memoryQRCodesFallback: RestaurantQRCode[] | null = null;
+let memoryRestaurantFallback: RestaurantProfile | null = null;
+
 // Real-time broadcast sync
 let syncChannel: BroadcastChannel | null = null;
 if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -90,12 +94,26 @@ export const StorageService = {
     if (data.roles) localStorage.setItem(STORAGE_KEYS.ROLES, JSON.stringify(data.roles));
     if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
     if (data.categories) localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(data.categories));
-    if (data.qrCodes) localStorage.setItem(STORAGE_KEYS.QR_CODES, JSON.stringify(data.qrCodes));
+    if (data.qrCodes) {
+      memoryQRCodesFallback = data.qrCodes;
+      try {
+        localStorage.setItem(STORAGE_KEYS.QR_CODES, JSON.stringify(data.qrCodes));
+      } catch {
+        // Ignore quota overflow during hydration; memoryQRCodesFallback holds full payload
+      }
+    }
     if (data.scanEvents) localStorage.setItem(STORAGE_KEYS.SCAN_EVENTS, JSON.stringify(data.scanEvents));
     if (data.otps) localStorage.setItem(STORAGE_KEYS.OTPS, JSON.stringify(data.otps));
     if (data.notifications) NotificationService.setHistory(data.notifications);
     if (data.theme) localStorage.setItem(STORAGE_KEYS.THEME, JSON.stringify(data.theme));
-    if (data.restaurant) localStorage.setItem(STORAGE_KEYS.RESTAURANT, JSON.stringify(data.restaurant));
+    if (data.restaurant) {
+      memoryRestaurantFallback = data.restaurant;
+      try {
+        localStorage.setItem(STORAGE_KEYS.RESTAURANT, JSON.stringify(data.restaurant));
+      } catch {
+        // Ignore quota overflow
+      }
+    }
   },
 
   saveThemeSetting(theme: CustomThemeSetting): void {
@@ -587,16 +605,27 @@ export const StorageService = {
   // ==================== QR CODES & ANALYTICS ====================
   getQRCodes(): RestaurantQRCode[] {
     try {
+      const now = Date.now();
+      if (Array.isArray(memoryQRCodesFallback)) {
+        return memoryQRCodesFallback
+          .filter((q) => q && !q.deletedAt)
+          .map((q) => ({
+            ...q,
+            isExpired: q.expiresAt ? new Date(q.expiresAt).getTime() < now : false,
+          }));
+      }
       const data = localStorage.getItem(STORAGE_KEYS.QR_CODES);
       if (data) {
-        const parsed: RestaurantQRCode[] = JSON.parse(data);
-        const now = Date.now();
-        return parsed
-          .filter((q) => !q.deletedAt)
-          .map((q) => {
-            const isExpired = q.expiresAt ? new Date(q.expiresAt).getTime() < now : false;
-            return { ...q, isExpired };
-          });
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          memoryQRCodesFallback = parsed;
+          return parsed
+            .filter((q) => q && !q.deletedAt)
+            .map((q) => {
+              const isExpired = q.expiresAt ? new Date(q.expiresAt).getTime() < now : false;
+              return { ...q, isExpired };
+            });
+        }
       }
       // Populate default categories
       const initialQRs: RestaurantQRCode[] = [
@@ -734,23 +763,54 @@ export const StorageService = {
 
   getAllQRCodesIncludingDeleted(): RestaurantQRCode[] {
     try {
+      if (Array.isArray(memoryQRCodesFallback)) return memoryQRCodesFallback;
       const data = localStorage.getItem(STORAGE_KEYS.QR_CODES);
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) : [];
+      const safe = Array.isArray(parsed) ? parsed : [];
+      memoryQRCodesFallback = safe;
+      return safe;
     } catch {
-      return [];
+      return Array.isArray(memoryQRCodesFallback) ? memoryQRCodesFallback : [];
     }
   },
 
   saveQRCodes(qrCodes: RestaurantQRCode[]): void {
-    localStorage.setItem(STORAGE_KEYS.QR_CODES, JSON.stringify(qrCodes));
-    notifySync('QR_CODES_UPDATED', qrCodes);
+    const safeList = Array.isArray(qrCodes) ? qrCodes : [];
+    memoryQRCodesFallback = safeList;
+    try {
+      localStorage.setItem(STORAGE_KEYS.QR_CODES, JSON.stringify(safeList));
+    } catch {
+      // Fallback: strip oversized inline base64 blobs (>150KB) for localStorage metadata persistence;
+      // full files remain in memoryQRCodesFallback and backend API.
+      try {
+        const compact = safeList.map((q) => ({
+          ...q,
+          uploadedFiles: Array.isArray(q.uploadedFiles)
+            ? q.uploadedFiles.map((f) =>
+                f && typeof f.url === 'string' && f.url.startsWith('data:') && f.url.length > 150000
+                  ? { ...f, url: '' }
+                  : f
+              )
+            : [],
+        }));
+        localStorage.setItem(STORAGE_KEYS.QR_CODES, JSON.stringify(compact));
+      } catch {
+        // Ignore if still over quota
+      }
+    }
+    notifySync('QR_CODES_UPDATED', safeList);
   },
 
   createQRCode(qrCode: RestaurantQRCode): void {
     const all = this.getAllQRCodesIncludingDeleted();
-    all.unshift(qrCode);
-    this.saveQRCodes(all);
-    ApiClient.createQRCode(qrCode).catch(() => {});
+    const safeAll = Array.isArray(all) ? all : [];
+    const next = [qrCode, ...safeAll];
+    this.saveQRCodes(next);
+    try {
+      ApiClient.createQRCode(qrCode).catch(() => {});
+    } catch {
+      // Ignore sync network error; memory fallback already saved
+    }
   },
 
   updateQRCode(updated: RestaurantQRCode): void {
@@ -854,20 +914,37 @@ export const StorageService = {
   // ==================== RESTAURANT / BRAND PROFILE ====================
   getRestaurant(): RestaurantProfile {
     try {
+      if (memoryRestaurantFallback && typeof memoryRestaurantFallback === 'object') {
+        return memoryRestaurantFallback;
+      }
       const data = localStorage.getItem(STORAGE_KEYS.RESTAURANT);
-      return data ? JSON.parse(data) : INITIAL_RESTAURANT;
-    } catch {
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === 'object') {
+          memoryRestaurantFallback = parsed;
+          return parsed;
+        }
+      }
       return INITIAL_RESTAURANT;
+    } catch {
+      return memoryRestaurantFallback || INITIAL_RESTAURANT;
     }
   },
 
   saveRestaurant(restaurant: RestaurantProfile): void {
-    localStorage.setItem(STORAGE_KEYS.RESTAURANT, JSON.stringify(restaurant));
+    memoryRestaurantFallback = restaurant;
+    try {
+      localStorage.setItem(STORAGE_KEYS.RESTAURANT, JSON.stringify(restaurant));
+    } catch {
+      // Ignore quota overflow
+    }
     notifySync('RESTAURANT_UPDATED', restaurant);
     ApiClient.saveCompany(restaurant).catch(() => {});
   },
 
   resetAllToDefault(): void {
+    memoryQRCodesFallback = null;
+    memoryRestaurantFallback = null;
     Object.values(STORAGE_KEYS).forEach((key) => {
       if (key !== STORAGE_KEYS.DATABASE_NAME) {
         localStorage.removeItem(key);
