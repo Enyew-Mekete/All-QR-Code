@@ -1,0 +1,37 @@
+import { RestaurantProfile } from '../types';
+
+export const INITIAL_RESTAURANT: RestaurantProfile = {
+  id: 'company_qr_01',
+  name: 'QR Code Studio',
+  tagline: 'Universal Dynamic QR Code Engine',
+  description: 'Instant Dynamic QR Codes · Smart Analytics · Powered By Enyew M.',
+  website: 'https://qrcodegenerator.io',
+  phone: '+251943305937',
+  address: 'Addis Ababa, Ethiopia',
+  wifiSsid: 'Guest_HighSpeed_Wi-Fi',
+  wifiPassword: 'welcomeguest',
+  currencySymbol: '$',
+  currencyCode: 'USD',
+  taxRatePercent: 8.5,
+  logoUrl: './assets/guansa_logo.png',
+  coverImageUrl: '/src/assets/images/menu_artisan_pizza_1793349863039.jpg',
+  themeColor: '#059669',
+  welcomeMessage: 'Welcome! Access instant links, digital menus, channels, and business directories.',
+  allowOnlineOrders: false,
+  allowTableDelivery: false,
+  allowPickup: false,
+  acceptedPaymentMethods: ['apple_pay', 'google_pay', 'credit_card', 'counter_cash'],
+  menuDisplayMode: 'document',
+  showImagesInGrid: false,
+  uploadedMenuFiles: [
+    {
+      id: 'menu_sheet_official',
+      name: 'Official Digital Menu Sheet.png',
+      type: 'image',
+      url: './assets/guansa_menu_sheet.png',
+      sizeFormatted: '1.8 MB (HD)',
+      uploadedAt: '2026-10-29T18:30:00Z',
+      caption: 'Digital Menu Lookbook',
+    },
+  ],
+};
