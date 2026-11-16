@@ -1,12 +1,41 @@
 import { RestaurantQRCode } from '../types';
 
+const CUSTOM_SCAN_BASE_KEY = 'qrcode_generator_custom_scan_base_url';
+
 export const UrlResolver = {
+  getCustomBaseUrl(): string {
+    try {
+      return (typeof localStorage !== 'undefined' && localStorage.getItem(CUSTOM_SCAN_BASE_KEY)) || '';
+    } catch {
+      return '';
+    }
+  },
+
+  setCustomBaseUrl(url: string): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const trimmed = url.trim().replace(/\/+$/, '');
+      if (trimmed) {
+        localStorage.setItem(CUSTOM_SCAN_BASE_KEY, trimmed);
+      } else {
+        localStorage.removeItem(CUSTOM_SCAN_BASE_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  },
+
+  isPrivateNetworkUrl(url: string): boolean {
+    return /^https?:\/\/(localhost|127\.0\.0\.1|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(url);
+  },
+
   /**
    * Resolves the real live base URL of the running application.
    */
   getBaseAppUrl(customBaseUrl?: string): string {
-    if (customBaseUrl && customBaseUrl.trim() !== '') {
-      let url = customBaseUrl.trim();
+    const override = (customBaseUrl !== undefined ? customBaseUrl : this.getCustomBaseUrl()).trim();
+    if (override !== '') {
+      let url = override;
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = `https://${url}`;
       }

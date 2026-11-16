@@ -5,8 +5,8 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
-    // Serve from root path
-    base: '/All-QR-Code/',
+    // Serve from root path in AI Studio/server mode; use repo subpath on GitHub Pages CI
+    base: process.env.GITHUB_ACTIONS ? '/All-QR-Code/' : '/',
 
     plugins: [
       react(),

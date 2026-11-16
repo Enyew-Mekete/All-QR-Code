@@ -273,15 +273,12 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
   ]);
 
   useEffect(() => {
-    const previewUrl =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/?mode=scan&qr=preview`
-        : 'https://qrcodegenerator.io/?mode=scan';
+    const previewUrl = UrlResolver.getScanUrl(draftQR);
     QRGeneratorService.generateBrandedCanvas(previewUrl, draftQR.styling, {
       restaurantName: draftQR.title,
       logoSrc: draftQR.styling.customLogoUrl || draftQR.welcomeScreen?.logoUrl,
     }).then((url) => setLiveQrImg(url));
-  }, [draftQR.title, draftQR.styling, draftQR.welcomeScreen?.logoUrl]);
+  }, [draftQR]);
 
   const normalizeTargetUrl = (raw: string): string => {
     const trimmed = raw.trim();
