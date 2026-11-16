@@ -1,18 +1,1 @@
-## Features
-
-- Secure User Authentication
-- OTP Verification
-- Role-Based Access Control (RBAC)
-- User & Permission Management
-- QR Code Generation
-- Dynamic QR Code Management
-- QR Scan Tracking
-- Analytics Dashboard
-- Reports & Statistics
-- Activity & Audit Logs
-- PostgreSQL Database Integration
-- RESTful APIs
-- Responsive User Interface
-- Enterprise-Grade Security
-- JWT Authentication
-- Data Encryption & Validation
+Secure QR Code Generator & Analytics Platform | React | Node.js | PostgreSQL | OTP Authentication | RBAC | Dashboard Analytics | Reporting | Enterprise Security
