@@ -364,6 +364,13 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
 
       setGeneratedHdImg(hdPng);
       setCreatedQR(resultQR);
+
+      if (hdPng) {
+        QRGeneratorService.downloadImage(
+          hdPng,
+          `${resultQR.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_qr_hd.png`
+        );
+      }
     } catch {
       setFormError('Could not generate the QR code. Please check your inputs and try again.');
     } finally {
@@ -976,6 +983,14 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
                     <div className="text-[11px] text-slate-500">
                       Preview before generating &amp; downloading
                     </div>
+                    <button
+                      type="submit"
+                      disabled={isGenerating}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer disabled:opacity-60"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{isGenerating ? 'Generating...' : 'Create & Download HD PNG'}</span>
+                    </button>
                   </div>
                 ) : (
                   <MobileDeviceFrame width="100%" height={540} restaurantName={draftQR.title}>
@@ -1003,13 +1018,21 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
                 Generates your live QR code immediately with Download &amp; Edit options.
               </div>
             )}
-            <div className="flex items-center justify-end gap-3 shrink-0">
+            <div className="flex flex-wrap items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
               >
                 Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isGenerating}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer disabled:opacity-60 whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{isGenerating ? 'Generating...' : 'Download HD PNG'}</span>
               </button>
               <button
                 type="submit"

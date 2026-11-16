@@ -222,6 +222,31 @@ export const QRGeneratorService = {
    * Triggers a browser download of the QR code image
    */
   downloadImage(dataUrl: string, filename: string) {
+    if (!dataUrl) return;
+    try {
+      if (dataUrl.startsWith('data:')) {
+        const [header, base64] = dataUrl.split(',');
+        const mimeMatch = header.match(/data:([^;]+);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+        const byteChars = atob(base64);
+        const byteNums = new Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+          byteNums[i] = byteChars.charCodeAt(i);
+        }
+        const blob = new Blob([new Uint8Array(byteNums)], { type: mime });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        return;
+      }
+    } catch {
+      // Fallback to direct link click below
+    }
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = filename;
