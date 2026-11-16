@@ -51,7 +51,20 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
   onSave,
   onToast,
 }) => {
-  const [currentQR, setCurrentQR] = useState<RestaurantQRCode>({ ...qrCode });
+  // Ensure legacy menu QR codes inherit sample files if they have none yet
+  const initialFiles: UploadedMenuFile[] =
+    qrCode.uploadedFiles && qrCode.uploadedFiles.length > 0
+      ? qrCode.uploadedFiles
+      : qrCode.type === 'restaurant_menu' ||
+          qrCode.type === 'table_standee' ||
+          qrCode.type === 'business_list'
+        ? restaurant.uploadedMenuFiles || []
+        : [];
+
+  const [currentQR, setCurrentQR] = useState<RestaurantQRCode>({
+    ...qrCode,
+    uploadedFiles: initialFiles,
+  });
   const [currentRestaurant, setCurrentRestaurant] = useState<RestaurantProfile>({ ...restaurant });
 
   const sheetInputRef = useRef<HTMLInputElement>(null);
@@ -60,13 +73,15 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     basic: true,
-    design: true,
+    sheets: true,
     welcome: true,
-    sheets: false,
+    design: true,
   });
 
   const [qrPreviewUrl, setQrPreviewUrl] = useState<string>('');
-  const [activePreviewTab, setActivePreviewTab] = useState<'landing' | 'qr'>('landing');
+  const [activePreviewTab, setActivePreviewTab] = useState<'welcome' | 'content' | 'qr'>(
+    qrCode.welcomeScreen?.enabled ? 'welcome' : 'content'
+  );
 
   const toggleSection = (key: string) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -103,6 +118,7 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
           logoUrl: dataUrl,
         },
       }));
+      setActivePreviewTab('welcome');
     };
     reader.readAsDataURL(file);
   };
@@ -128,7 +144,7 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
   const handleSheetUpload = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     Array.from(files).forEach((file) => {
-      const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf');
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       const reader = new FileReader();
       reader.onload = (e) => {
         const resultUrl = e.target?.result as string;
@@ -137,28 +153,39 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
           name: file.name,
           type: isPdf ? 'pdf' : 'image',
           url: resultUrl,
-          sizeFormatted: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+          sizeFormatted: `${Math.max(0.1, file.size / (1024 * 1024)).toFixed(1)} MB`,
           uploadedAt: new Date().toISOString(),
           caption: file.name.replace(/\.[^/.]+$/, ''),
         };
 
-        setCurrentRestaurant((prev) => ({
+        setCurrentQR((prev) => ({
           ...prev,
-          uploadedMenuFiles: [...(prev.uploadedMenuFiles || []), newFile],
+          uploadedFiles: [...(prev.uploadedFiles || []), newFile],
         }));
+        setActivePreviewTab('content');
       };
       reader.readAsDataURL(file);
     });
   };
 
   const handleRemoveSheet = (id: string) => {
-    setCurrentRestaurant((prev) => ({
+    setCurrentQR((prev) => ({
       ...prev,
-      uploadedMenuFiles: prev.uploadedMenuFiles.filter((f) => f.id !== id),
+      uploadedFiles: (prev.uploadedFiles || []).filter((f) => f.id !== id),
+    }));
+  };
+
+  const handleUpdateSheetCaption = (id: string, caption: string) => {
+    setCurrentQR((prev) => ({
+      ...prev,
+      uploadedFiles: (prev.uploadedFiles || []).map((f) =>
+        f.id === id ? { ...f, caption } : f
+      ),
     }));
   };
 
   const handleDownloadHighRes = async () => {
+    onSave(currentQR, currentRestaurant);
     const scanUrl = UrlResolver.getScanUrl(currentQR);
     const hdUrl = await QRGeneratorService.generateBrandedCanvas(scanUrl, currentQR.styling, {
       restaurantName: currentQR.title,
@@ -170,7 +197,7 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
       hdUrl,
       `${currentQR.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_qr_hd.png`
     );
-    onToast('Downloaded full-resolution PNG QR code.', 'success');
+    onToast('Saved & downloaded full-resolution PNG QR code.', 'success');
   };
 
   const handleSave = () => {
@@ -179,6 +206,7 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
   };
 
   const scanUrl = UrlResolver.getScanUrl(currentQR);
+  const qrFiles = currentQR.uploadedFiles || [];
 
   return (
     <div className="space-y-6">
@@ -205,21 +233,31 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleSave}
-          className="flex items-center gap-1.5 px-5 py-2.5 text-white rounded-xl text-xs font-bold transition-opacity hover:opacity-90 shadow-sm cursor-pointer self-end sm:self-auto whitespace-nowrap"
-          style={{ backgroundColor: theme.primaryColor }}
-        >
-          <Save className="w-4 h-4" />
-          <span>Save Changes</span>
-        </button>
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <button
+            type="button"
+            onClick={handleDownloadHighRes}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer whitespace-nowrap"
+          >
+            <Download className="w-4 h-4" />
+            <span>Download HD</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="flex items-center gap-1.5 px-5 py-2.5 text-white rounded-xl text-xs font-bold transition-opacity hover:opacity-90 shadow-sm cursor-pointer whitespace-nowrap"
+            style={{ backgroundColor: theme.primaryColor }}
+          >
+            <Save className="w-4 h-4" />
+            <span>Save Changes</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Split: Left Config Accordions, Right Live Mobile Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-7 space-y-4">
-          {/* 1. Destination, Category & Expiration */}
+          {/* 1. Destination, Description, Category & Expiration */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
             <button
               type="button"
@@ -228,7 +266,7 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
             >
               <span className="flex items-center gap-2.5 text-sm">
                 <Info className="w-4 h-4 text-slate-700" />
-                <span>Destination, Category &amp; Expiration</span>
+                <span>Title, Description, Destination &amp; Expiration</span>
               </span>
               {openSections.basic ? (
                 <ChevronUp className="w-4 h-4 text-slate-400" />
@@ -273,8 +311,33 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-slate-700 mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={currentQR.description || ''}
+                      onChange={(e) => setCurrentQR({ ...currentQR, description: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900"
+                      placeholder="Short description shown under the title"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Button Label</label>
+                    <input
+                      type="text"
+                      value={currentQR.ctaLabel || 'See More'}
+                      onChange={(e) => setCurrentQR({ ...currentQR, ctaLabel: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900"
+                      placeholder="See More"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Destination URL</label>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Destination URL (Optional if Image/PDF uploaded)
+                  </label>
                   <input
                     type="url"
                     value={currentQR.targetUrl}
@@ -324,7 +387,258 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
             )}
           </div>
 
-          {/* 2. QR Design & Center Logo */}
+          {/* 2. Uploaded Files (Images, PDFs, Menus, Catalogs) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleSection('sheets')}
+              className="w-full px-5 py-4 flex items-center justify-between text-left font-bold text-slate-900 hover:bg-slate-50 cursor-pointer"
+            >
+              <span className="flex items-center gap-2.5 text-sm">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <span>Uploaded Files (Image, PDF &amp; Menu Sheets)</span>
+                {qrFiles.length > 0 && (
+                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[11px] font-bold">
+                    {qrFiles.length}
+                  </span>
+                )}
+              </span>
+              {openSections.sheets ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+
+            {openSections.sheets && (
+              <div className="px-5 pb-5 pt-3 space-y-3 border-t border-slate-100 text-xs">
+                <input
+                  ref={sheetInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,application/pdf"
+                  onChange={(e) => handleSheetUpload(e.target.files)}
+                  className="hidden"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => sheetInputRef.current?.click()}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Upload Image / PDF File</span>
+                  </button>
+                  <span className="text-[11px] text-slate-500">
+                    Displayed on scan right after the Welcome Screen across all categories.
+                  </span>
+                </div>
+
+                {qrFiles.length > 0 && (
+                  <div className="space-y-2.5 pt-2">
+                    {qrFiles.map((file) => (
+                      <div
+                        key={file.id}
+                        className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {file.type === 'pdf' ? (
+                            <div className="w-11 h-11 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                          ) : (
+                            <img
+                              src={file.url}
+                              alt={file.name}
+                              className="w-11 h-11 rounded-lg object-cover border border-slate-200 bg-white shrink-0"
+                            />
+                          )}
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <input
+                              type="text"
+                              value={file.caption || ''}
+                              onChange={(e) => handleUpdateSheetCaption(file.id, e.target.value)}
+                              placeholder="Caption or title..."
+                              className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg font-semibold text-slate-800 text-xs"
+                            />
+                            <div className="text-[10px] text-slate-400 font-mono truncate">
+                              {file.name} · {file.type.toUpperCase()}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSheet(file.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                          title="Remove file"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Flexible Welcome Screen Builder */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleSection('welcome')}
+              className="w-full px-5 py-4 flex items-center justify-between text-left font-bold text-slate-900 hover:bg-slate-50 cursor-pointer"
+            >
+              <span className="flex items-center gap-2.5 text-sm">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span>Welcome Screen (Logo &amp; Custom Splash)</span>
+              </span>
+              {openSections.welcome ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+
+            {openSections.welcome && (
+              <div className="px-5 pb-5 pt-3 space-y-4 border-t border-slate-100 text-xs">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="font-bold text-slate-800">Enable Welcome Screen on Scan</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(currentQR.welcomeScreen?.enabled)}
+                    onChange={(e) =>
+                      setCurrentQR({
+                        ...currentQR,
+                        welcomeScreen: {
+                          ...currentQR.welcomeScreen,
+                          enabled: e.target.checked,
+                        },
+                      })
+                    }
+                    className="w-4 h-4 rounded cursor-pointer"
+                  />
+                </label>
+
+                {currentQR.welcomeScreen?.enabled && (
+                  <div className="space-y-3 pt-2 border-t border-slate-100">
+                    <div className="flex items-center gap-4">
+                      <div className="w-24 h-20 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center p-1 overflow-hidden shrink-0">
+                        {currentQR.welcomeScreen.logoUrl ? (
+                          <img
+                            src={currentQR.welcomeScreen.logoUrl}
+                            alt="Welcome Screen Logo"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <ImageIcon className="w-6 h-6 text-slate-300" />
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <input
+                          ref={welcomeLogoInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleWelcomeLogoUpload}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => welcomeLogoInputRef.current?.click()}
+                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Upload Welcome Image / Logo</span>
+                        </button>
+                        <p className="text-[11px] text-slate-500">
+                          Shown first on scan before displaying the menu or uploaded files.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Headline</label>
+                        <input
+                          type="text"
+                          value={currentQR.welcomeScreen.headline || ''}
+                          onChange={(e) =>
+                            setCurrentQR({
+                              ...currentQR,
+                              welcomeScreen: {
+                                ...currentQR.welcomeScreen!,
+                                headline: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="Welcome!"
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Button Label</label>
+                        <input
+                          type="text"
+                          value={currentQR.welcomeScreen.buttonText || ''}
+                          onChange={(e) =>
+                            setCurrentQR({
+                              ...currentQR,
+                              welcomeScreen: {
+                                ...currentQR.welcomeScreen!,
+                                buttonText: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="Continue"
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="block font-bold text-slate-700 mb-1">Subheadline</label>
+                        <input
+                          type="text"
+                          value={currentQR.welcomeScreen.subheadline || ''}
+                          onChange={(e) =>
+                            setCurrentQR({
+                              ...currentQR,
+                              welcomeScreen: {
+                                ...currentQR.welcomeScreen!,
+                                subheadline: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="Greeting message..."
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Banner Color</label>
+                        <input
+                          type="color"
+                          value={currentQR.welcomeScreen.bannerColor || currentQR.styling.fgColor}
+                          onChange={(e) =>
+                            setCurrentQR({
+                              ...currentQR,
+                              welcomeScreen: {
+                                ...currentQR.welcomeScreen!,
+                                bannerColor: e.target.value,
+                              },
+                            })
+                          }
+                          className="w-full h-9 rounded-xl border border-slate-200 cursor-pointer p-0.5 bg-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 4. QR Design & Center Logo */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
             <button
               type="button"
@@ -475,249 +789,46 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
               </div>
             )}
           </div>
-
-          {/* 3. Flexible Welcome Screen Builder */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleSection('welcome')}
-              className="w-full px-5 py-4 flex items-center justify-between text-left font-bold text-slate-900 hover:bg-slate-50 cursor-pointer"
-            >
-              <span className="flex items-center gap-2.5 text-sm">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                <span>Welcome Screen (Logo &amp; Custom Splash)</span>
-              </span>
-              {openSections.welcome ? (
-                <ChevronUp className="w-4 h-4 text-slate-400" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
-
-            {openSections.welcome && (
-              <div className="px-5 pb-5 pt-3 space-y-4 border-t border-slate-100 text-xs">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="font-bold text-slate-800">Enable Welcome Screen on Scan</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(currentQR.welcomeScreen?.enabled)}
-                    onChange={(e) =>
-                      setCurrentQR({
-                        ...currentQR,
-                        welcomeScreen: {
-                          ...currentQR.welcomeScreen,
-                          enabled: e.target.checked,
-                        },
-                      })
-                    }
-                    className="w-4 h-4 rounded cursor-pointer"
-                  />
-                </label>
-
-                {currentQR.welcomeScreen?.enabled && (
-                  <div className="space-y-3 pt-2 border-t border-slate-100">
-                    <div className="flex items-center gap-4">
-                      <div className="w-24 h-20 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center p-1 overflow-hidden shrink-0">
-                        {currentQR.welcomeScreen.logoUrl ? (
-                          <img
-                            src={currentQR.welcomeScreen.logoUrl}
-                            alt="Welcome Screen Logo"
-                            className="w-full h-full object-contain"
-                          />
-                        ) : (
-                          <ImageIcon className="w-6 h-6 text-slate-300" />
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <input
-                          ref={welcomeLogoInputRef}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleWelcomeLogoUpload}
-                          className="hidden"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => welcomeLogoInputRef.current?.click()}
-                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold inline-flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Upload Welcome Image / Logo</span>
-                        </button>
-                        <p className="text-[11px] text-slate-500">
-                          Rendered at full uploaded resolution on scan.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Headline</label>
-                        <input
-                          type="text"
-                          value={currentQR.welcomeScreen.headline || ''}
-                          onChange={(e) =>
-                            setCurrentQR({
-                              ...currentQR,
-                              welcomeScreen: {
-                                ...currentQR.welcomeScreen!,
-                                headline: e.target.value,
-                              },
-                            })
-                          }
-                          placeholder="Welcome!"
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Button Label</label>
-                        <input
-                          type="text"
-                          value={currentQR.welcomeScreen.buttonText || ''}
-                          onChange={(e) =>
-                            setCurrentQR({
-                              ...currentQR,
-                              welcomeScreen: {
-                                ...currentQR.welcomeScreen!,
-                                buttonText: e.target.value,
-                              },
-                            })
-                          }
-                          placeholder="Continue"
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="sm:col-span-2">
-                        <label className="block font-bold text-slate-700 mb-1">Subheadline</label>
-                        <input
-                          type="text"
-                          value={currentQR.welcomeScreen.subheadline || ''}
-                          onChange={(e) =>
-                            setCurrentQR({
-                              ...currentQR,
-                              welcomeScreen: {
-                                ...currentQR.welcomeScreen!,
-                                subheadline: e.target.value,
-                              },
-                            })
-                          }
-                          placeholder="Greeting message..."
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Banner Color</label>
-                        <input
-                          type="color"
-                          value={currentQR.welcomeScreen.bannerColor || currentQR.styling.fgColor}
-                          onChange={(e) =>
-                            setCurrentQR({
-                              ...currentQR,
-                              welcomeScreen: {
-                                ...currentQR.welcomeScreen!,
-                                bannerColor: e.target.value,
-                              },
-                            })
-                          }
-                          className="w-full h-9 rounded-xl border border-slate-200 cursor-pointer p-0.5 bg-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 4. Optional HD Menu / Brochure Sheets */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleSection('sheets')}
-              className="w-full px-5 py-4 flex items-center justify-between text-left font-bold text-slate-900 hover:bg-slate-50 cursor-pointer"
-            >
-              <span className="flex items-center gap-2.5 text-sm">
-                <FileText className="w-4 h-4 text-slate-700" />
-                <span>Optional HD Sheets (Menus / Catalogs / Flyers)</span>
-              </span>
-              {openSections.sheets ? (
-                <ChevronUp className="w-4 h-4 text-slate-400" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
-
-            {openSections.sheets && (
-              <div className="px-5 pb-5 pt-3 space-y-3 border-t border-slate-100 text-xs">
-                <input
-                  ref={sheetInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*,application/pdf"
-                  onChange={(e) => handleSheetUpload(e.target.files)}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => sheetInputRef.current?.click()}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Upload HD Image / PDF Sheet</span>
-                </button>
-
-                {currentRestaurant.uploadedMenuFiles.length > 0 && (
-                  <div className="space-y-2 pt-2">
-                    {currentRestaurant.uploadedMenuFiles.map((file) => (
-                      <div
-                        key={file.id}
-                        className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2"
-                      >
-                        <span className="font-semibold text-slate-800 truncate">{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSheet(file.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* Right: Live Mobile Simulator */}
+        {/* Right: Live Mobile Simulator (Welcome, Menu/File, and QR Code BEFORE download) */}
         <div className="lg:col-span-5 lg:sticky lg:top-6">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-4">
-            <div className="flex items-center justify-between mb-3 text-xs">
+            <div className="flex items-center justify-between gap-2 mb-3 text-xs">
               <div className="flex items-center gap-1.5 font-bold text-slate-900">
                 <Smartphone className="w-4 h-4 text-slate-700" />
-                <span>Live Mobile Preview</span>
+                <span>Live Preview</span>
               </div>
 
-              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[11px]">
+                {currentQR.welcomeScreen?.enabled && (
+                  <button
+                    type="button"
+                    onClick={() => setActivePreviewTab('welcome')}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                      activePreviewTab === 'welcome'
+                        ? 'bg-slate-900 text-white shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Welcome
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => setActivePreviewTab('landing')}
-                  className={`px-3 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
-                    activePreviewTab === 'landing'
+                  onClick={() => setActivePreviewTab('content')}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                    activePreviewTab === 'content'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  Scan View
+                  Menu / File
                 </button>
                 <button
                   type="button"
                   onClick={() => setActivePreviewTab('qr')}
-                  className={`px-3 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
                     activePreviewTab === 'qr'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-500 hover:text-slate-800'
@@ -728,16 +839,7 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
               </div>
             </div>
 
-            {activePreviewTab === 'landing' ? (
-              <MobileDeviceFrame width="100%" height={660} restaurantName={currentQR.title}>
-                <QRScanLandingView
-                  qrCode={currentQR}
-                  restaurant={currentRestaurant}
-                  theme={theme}
-                  isPreview={true}
-                />
-              </MobileDeviceFrame>
-            ) : (
+            {activePreviewTab === 'qr' ? (
               <div className="h-[660px] bg-slate-50 rounded-[34px] border border-slate-200 flex flex-col items-center justify-center p-6 text-center space-y-4">
                 <div className="bg-white p-4 rounded-2xl shadow-md border border-slate-200 max-w-xs mx-auto">
                   {qrPreviewUrl ? (
@@ -789,6 +891,23 @@ export const QRCodeCustomizer: React.FC<QRCodeCustomizerProps> = ({
                   </div>
                 </div>
               </div>
+            ) : (
+              <MobileDeviceFrame width="100%" height={660} restaurantName={currentQR.title}>
+                <QRScanLandingView
+                  qrCode={currentQR}
+                  restaurant={currentRestaurant}
+                  theme={theme}
+                  isPreview={true}
+                  previewStage={
+                    activePreviewTab === 'welcome' && currentQR.welcomeScreen?.enabled
+                      ? 'welcome'
+                      : 'content'
+                  }
+                  onPreviewStageChange={(stage) =>
+                    setActivePreviewTab(stage === 'welcome' ? 'welcome' : 'content')
+                  }
+                />
+              </MobileDeviceFrame>
             )}
           </div>
         </div>

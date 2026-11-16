@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   X,
   ArrowRight,
@@ -6,45 +6,89 @@ import {
   Calendar,
   Sparkles,
   Image as ImageIcon,
+  FileText,
+  Trash2,
+  Smartphone,
+  QrCode as QrCodeIcon,
 } from 'lucide-react';
 import {
   CustomThemeSetting,
   QRCategory,
   QRDestinationType,
+  RestaurantProfile,
   RestaurantQRCode,
+  UploadedMenuFile,
 } from '../types';
 import { getDistinctCreateQRTheme } from '../utils/themeColors';
+import { MobileDeviceFrame } from './MobileDeviceFrame';
+import { QRScanLandingView } from './QRScanLandingView';
+import { QRGeneratorService } from '../services/qrGenerator';
+import { INITIAL_RESTAURANT } from '../data/initialData';
 
 interface QRCodeCreatorModalProps {
   categories: QRCategory[];
   defaultCategoryId?: string;
   theme: CustomThemeSetting;
+  restaurant?: RestaurantProfile;
   onClose: () => void;
   onCreate: (newQR: Partial<RestaurantQRCode>) => void;
 }
 
-const CATEGORY_TO_TYPE: Record<string, { type: QRDestinationType; placeholder: string; cta: string }> = {
-  cat_website: { type: 'website', placeholder: 'https://yourcompany.com', cta: 'VISIT WEBSITE' },
-  cat_telegram: { type: 'telegram', placeholder: 'https://t.me/yourchannel', cta: 'JOIN TELEGRAM' },
-  cat_youtube: { type: 'youtube', placeholder: 'https://youtube.com/@yourchannel', cta: 'WATCH ON YOUTUBE' },
-  cat_social: { type: 'social_media', placeholder: 'https://instagram.com/yourhandle', cta: 'FOLLOW US' },
-  cat_business_list: { type: 'business_list', placeholder: 'https://directory.yourcompany.com', cta: 'VIEW BUSINESS' },
-  cat_restaurant: { type: 'restaurant_menu', placeholder: 'https://yourmenu.com', cta: 'SCAN FOR MENU' },
+const CATEGORY_TO_TYPE: Record<
+  string,
+  { type: QRDestinationType; placeholder: string; cta: string }
+> = {
+  cat_website: {
+    type: 'website',
+    placeholder: 'https://yourcompany.com',
+    cta: 'VISIT WEBSITE',
+  },
+  cat_telegram: {
+    type: 'telegram',
+    placeholder: 'https://t.me/yourchannel',
+    cta: 'JOIN TELEGRAM',
+  },
+  cat_youtube: {
+    type: 'youtube',
+    placeholder: 'https://youtube.com/@yourchannel',
+    cta: 'WATCH ON YOUTUBE',
+  },
+  cat_social: {
+    type: 'social_media',
+    placeholder: 'https://instagram.com/yourhandle',
+    cta: 'FOLLOW US',
+  },
+  cat_business_list: {
+    type: 'business_list',
+    placeholder: 'https://directory.yourcompany.com',
+    cta: 'VIEW BUSINESS',
+  },
+  cat_restaurant: {
+    type: 'restaurant_menu',
+    placeholder: 'https://yourmenu.com',
+    cta: 'SCAN FOR MENU',
+  },
 };
 
 export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
   categories,
   defaultCategoryId,
   theme,
+  restaurant,
   onClose,
   onCreate,
 }) => {
   const initialCatId = defaultCategoryId || categories[0]?.id || 'cat_website';
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(initialCatId);
   const [title, setTitle] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [ctaLabel, setCtaLabel] = useState<string>('See More');
   const [targetUrl, setTargetUrl] = useState<string>('');
   const [hasExpiry, setHasExpiry] = useState<boolean>(false);
   const [expiresAt, setExpiresAt] = useState<string>('');
+
+  // Uploaded files (Images, PDFs, Menus, Catalogs) for ANY category
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedMenuFile[]>([]);
 
   // Welcome Screen config
   const [welcomeEnabled, setWelcomeEnabled] = useState<boolean>(true);
@@ -53,7 +97,12 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
   const [welcomeSubheadline, setWelcomeSubheadline] = useState<string>('');
   const [welcomeButtonText, setWelcomeButtonText] = useState<string>('Continue');
 
+  // Live Preview controls BEFORE creating/generating
+  const [previewTab, setPreviewTab] = useState<'welcome' | 'content' | 'qr'>('welcome');
+  const [liveQrImg, setLiveQrImg] = useState<string>('');
+
   const welcomeLogoRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
   const createBtn = getDistinctCreateQRTheme(theme);
 
   const selectedCat = categories.find((c) => c.id === selectedCategoryId) || categories[0];
@@ -68,19 +117,144 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setWelcomeLogoUrl((ev.target?.result as string) || '');
+      const url = (ev.target?.result as string) || '';
+      setWelcomeLogoUrl(url);
+      if (welcomeEnabled) setPreviewTab('welcome');
     };
     reader.readAsDataURL(file);
   };
 
+  const handleUploadFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file) => {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const resultUrl = (ev.target?.result as string) || '';
+        const newFile: UploadedMenuFile = {
+          id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: file.name,
+          type: isPdf ? 'pdf' : 'image',
+          url: resultUrl,
+          sizeFormatted: `${Math.max(0.1, file.size / (1024 * 1024)).toFixed(1)} MB`,
+          uploadedAt: new Date().toISOString(),
+          caption: file.name.replace(/\.[^/.]+$/, ''),
+        };
+        setUploadedFiles((prev) => [...prev, newFile]);
+        setPreviewTab('content');
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleLoadSampleMenu = () => {
+    setSelectedCategoryId('cat_restaurant');
+    setTitle("Guansa Ma'ed Menu");
+    setDescription('GOOD FOOD · GOOD MOOD — Fresh Ingredients, Authentic Flavors');
+    setCtaLabel('See More');
+    setTargetUrl('https://guansa-maed-mu.vercel.app');
+    setWelcomeEnabled(true);
+    setWelcomeLogoUrl('/assets/guansa_logo.png');
+    setWelcomeHeadline("Guansa Ma'ed");
+    setWelcomeSubheadline('GOOD FOOD · GOOD MOOD — Tap below to view our menu');
+    setWelcomeButtonText('View Menu');
+    setUploadedFiles([
+      {
+        id: `sample_menu_${Date.now()}`,
+        name: 'Guansa Coffee Hub Menu.png',
+        type: 'image',
+        url: '/assets/guansa_menu_card.png',
+        sizeFormatted: '652 × 922 HD',
+        uploadedAt: new Date().toISOString(),
+        caption: "Guansa Ma'ed Digital Menu",
+      },
+    ]);
+    setPreviewTab('welcome');
+  };
+
+  const draftQR: RestaurantQRCode = useMemo(() => {
+    const finalTitle = title.trim() || `${selectedCat?.name || 'Dynamic'} QR Code`;
+    const finalUrl = targetUrl.trim();
+    return {
+      id: 'draft_preview',
+      restaurantId: restaurant?.id || 'company_qr_01',
+      categoryId: selectedCategoryId,
+      title: finalTitle,
+      description: description.trim() || undefined,
+      ctaLabel: ctaLabel.trim() || 'See More',
+      type: presetMeta.type,
+      targetUrl: finalUrl,
+      shortUrl: 'dineqr.io/preview',
+      scansCount: 0,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      expiresAt: hasExpiry && expiresAt ? new Date(expiresAt).toISOString() : null,
+      styling: {
+        fgColor: createBtn.bg,
+        bgColor: '#ffffff',
+        frameStyle: 'scan-me',
+        frameText: presetMeta.cta,
+        dotStyle: 'rounded',
+        logoInCenter: Boolean(welcomeLogoUrl),
+        customLogoUrl: welcomeLogoUrl || undefined,
+        size: 280,
+      },
+      welcomeScreen: {
+        enabled: welcomeEnabled,
+        logoUrl: welcomeLogoUrl || undefined,
+        headline: welcomeHeadline.trim() || `Welcome to ${finalTitle}`,
+        subheadline:
+          welcomeSubheadline.trim() ||
+          description.trim() ||
+          `Connecting you directly to ${selectedCat?.name || 'our digital link'}`,
+        bannerColor: createBtn.bg,
+        buttonText: welcomeButtonText.trim() || 'Continue',
+        displaySeconds: 2,
+      },
+      uploadedFiles,
+    };
+  }, [
+    title,
+    description,
+    ctaLabel,
+    targetUrl,
+    selectedCategoryId,
+    selectedCat?.name,
+    presetMeta.type,
+    presetMeta.cta,
+    hasExpiry,
+    expiresAt,
+    createBtn.bg,
+    welcomeEnabled,
+    welcomeLogoUrl,
+    welcomeHeadline,
+    welcomeSubheadline,
+    welcomeButtonText,
+    uploadedFiles,
+    restaurant?.id,
+  ]);
+
+  useEffect(() => {
+    const previewUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/?mode=scan&qr=preview`
+        : 'https://qrcodegenerator.io/?mode=scan';
+    QRGeneratorService.generateBrandedCanvas(previewUrl, draftQR.styling, {
+      restaurantName: draftQR.title,
+      logoSrc: draftQR.styling.customLogoUrl || draftQR.welcomeScreen?.logoUrl,
+    }).then((url) => setLiveQrImg(url));
+  }, [draftQR.title, draftQR.styling, draftQR.welcomeScreen?.logoUrl]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalTitle = title.trim() || `${selectedCat?.name || 'Dynamic'} QR Code`;
-    const finalUrl = targetUrl.trim() || presetMeta.placeholder;
+    const finalUrl = targetUrl.trim() || (uploadedFiles.length > 0 ? '' : presetMeta.placeholder);
 
     onCreate({
       categoryId: selectedCategoryId,
       title: finalTitle,
+      description: description.trim() || undefined,
+      ctaLabel: ctaLabel.trim() || 'See More',
       type: presetMeta.type,
       targetUrl: finalUrl,
       shortUrl: `qr.enyew.io/${Math.random().toString(36).substring(2, 7)}`,
@@ -101,195 +275,395 @@ export const QRCodeCreatorModal: React.FC<QRCodeCreatorModalProps> = ({
         headline: welcomeHeadline.trim() || `Welcome to ${finalTitle}`,
         subheadline:
           welcomeSubheadline.trim() ||
+          description.trim() ||
           `Connecting you directly to ${selectedCat?.name || 'our digital link'}`,
         bannerColor: createBtn.bg,
         buttonText: welcomeButtonText.trim() || 'Continue',
-        displaySeconds: 3,
+        displaySeconds: 2,
       },
+      uploadedFiles,
     });
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+      <div className="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[94vh] animate-in fade-in zoom-in-95">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 gap-3">
           <div>
             <h2 className="text-base font-extrabold text-slate-900">Create QR Code</h2>
             <p className="text-xs text-slate-500">
-              Supports Websites, Telegram, YouTube, Social Media, Business Listings &amp; Menus.
+              Upload images, PDFs, or menus, configure your welcome screen logo, and preview before generating.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-600 cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleLoadSampleMenu}
+              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold cursor-pointer whitespace-nowrap"
+            >
+              Load Sample Menu
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-600 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-6 space-y-4 overflow-y-auto text-xs">
-            {/* Category Selection */}
-            <div>
-              <label className="block font-bold text-slate-700 mb-1.5">Category</label>
-              <select
-                value={selectedCategoryId}
-                onChange={(e) => setSelectedCategoryId(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900"
-              >
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Title & Target URL */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Column: Form Inputs */}
+            <div className="lg:col-span-7 space-y-4 text-xs">
+              {/* Category Selection */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">QR Code Title</label>
+                <label className="block font-bold text-slate-700 mb-1.5">Category</label>
+                <select
+                  value={selectedCategoryId}
+                  onChange={(e) => setSelectedCategoryId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Title & Description */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    QR Code / Content Title
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Guansa Ma'ed Menu"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Button Text (CTA)
+                  </label>
+                  <input
+                    type="text"
+                    value={ctaLabel}
+                    onChange={(e) => setCtaLabel(e.target.value)}
+                    placeholder="See More"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Description</label>
                 <input
                   type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Official Telegram Channel"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Short description shown under the title when scanned"
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Destination URL</label>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Destination URL {uploadedFiles.length > 0 ? '(Optional when file uploaded)' : ''}
+                </label>
                 <input
                   type="url"
-                  required
+                  required={uploadedFiles.length === 0}
                   value={targetUrl}
                   onChange={(e) => setTargetUrl(e.target.value)}
                   placeholder={presetMeta.placeholder}
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-900"
                 />
               </div>
-            </div>
 
-            {/* Optional Expiration Date */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
-              <label className="flex items-center justify-between cursor-pointer">
-                <span className="flex items-center gap-2 font-bold text-slate-800">
-                  <Calendar className="w-4 h-4 text-slate-600" />
-                  <span>Optional Expiration Date</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={hasExpiry}
-                  onChange={(e) => setHasExpiry(e.target.checked)}
-                  className="w-4 h-4 rounded cursor-pointer"
-                />
-              </label>
-
-              {hasExpiry && (
-                <div>
+              {/* Upload Files: Image, PDF, Menu, Flyer (for ANY Category) */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 font-bold text-slate-800">
+                    <FileText className="w-4 h-4 text-emerald-600" />
+                    <span>Upload File(s): Image, PDF or Menu Sheet</span>
+                  </span>
                   <input
-                    type="datetime-local"
-                    required={hasExpiry}
-                    value={expiresAt}
-                    onChange={(e) => setExpiresAt(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-xs text-slate-900"
+                    ref={filesInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*,application/pdf"
+                    onChange={(e) => handleUploadFiles(e.target.files)}
+                    className="hidden"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    After this date and time, scanning the QR code will show an expiration notice.
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => filesInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload Image / PDF</span>
+                  </button>
                 </div>
-              )}
-            </div>
 
-            {/* Flexible Welcome Screen Setup */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-              <label className="flex items-center justify-between cursor-pointer">
-                <span className="flex items-center gap-2 font-bold text-slate-800">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  <span>Welcome Screen on Scan</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={welcomeEnabled}
-                  onChange={(e) => setWelcomeEnabled(e.target.checked)}
-                  className="w-4 h-4 rounded cursor-pointer"
-                />
-              </label>
+                <p className="text-[11px] text-slate-500">
+                  Uploaded images or PDFs appear right after the Welcome Screen when scanned (and in the live preview on the right).
+                </p>
 
-              {welcomeEnabled && (
-                <div className="space-y-3 pt-2 border-t border-slate-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
-                      {welcomeLogoUrl ? (
-                        <img
-                          src={welcomeLogoUrl}
-                          alt="Welcome Logo"
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <ImageIcon className="w-6 h-6 text-slate-300" />
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <input
-                        ref={welcomeLogoRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleUploadWelcomeLogo}
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => welcomeLogoRef.current?.click()}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold cursor-pointer"
+                {uploadedFiles.length > 0 && (
+                  <div className="space-y-2 pt-1">
+                    {uploadedFiles.map((file) => (
+                      <div
+                        key={file.id}
+                        className="p-2 bg-white rounded-xl border border-slate-200 flex items-center justify-between gap-2"
                       >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Upload Logo / Image</span>
-                      </button>
-                      <p className="text-[11px] text-slate-500">
-                        Displayed on the Welcome Screen &amp; QR center in full quality.
-                      </p>
-                    </div>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {file.type === 'pdf' ? (
+                            <div className="w-9 h-9 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                              <FileText className="w-4 h-4" />
+                            </div>
+                          ) : (
+                            <img
+                              src={file.url}
+                              alt={file.name}
+                              className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-800 truncate">{file.name}</div>
+                            <div className="text-[10px] text-slate-400 uppercase">
+                              {file.type} · {file.sizeFormatted}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setUploadedFiles((prev) => prev.filter((f) => f.id !== file.id))
+                          }
+                          className="p-1.5 text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
+                )}
+              </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Flexible Welcome Screen Setup */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="flex items-center gap-2 font-bold text-slate-800">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <span>Welcome Screen Logo (Shown First on Scan)</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={welcomeEnabled}
+                    onChange={(e) => setWelcomeEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded cursor-pointer"
+                  />
+                </label>
+
+                {welcomeEnabled && (
+                  <div className="space-y-3 pt-2 border-t border-slate-200">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                        {welcomeLogoUrl ? (
+                          <img
+                            src={welcomeLogoUrl}
+                            alt="Welcome Logo"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <ImageIcon className="w-5 h-5 text-slate-300" />
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <input
+                          ref={welcomeLogoRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleUploadWelcomeLogo}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => welcomeLogoRef.current?.click()}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Welcome Logo</span>
+                        </button>
+                        <p className="text-[11px] text-slate-500">
+                          Shown on the Welcome Screen before opening the menu/file &amp; embedded in QR center.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Welcome Headline
+                        </label>
+                        <input
+                          type="text"
+                          value={welcomeHeadline}
+                          onChange={(e) => setWelcomeHeadline(e.target.value)}
+                          placeholder="Welcome to Our Brand"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Welcome Button Text
+                        </label>
+                        <input
+                          type="text"
+                          value={welcomeButtonText}
+                          onChange={(e) => setWelcomeButtonText(e.target.value)}
+                          placeholder="Continue"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl"
+                        />
+                      </div>
+                    </div>
+
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Welcome Headline</label>
+                      <label className="block font-semibold text-slate-700 mb-1">
+                        Welcome Message
+                      </label>
                       <input
                         type="text"
-                        value={welcomeHeadline}
-                        onChange={(e) => setWelcomeHeadline(e.target.value)}
-                        placeholder="Welcome to Our Brand"
+                        value={welcomeSubheadline}
+                        onChange={(e) => setWelcomeSubheadline(e.target.value)}
+                        placeholder="Short greeting shown when scanned"
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl"
                       />
                     </div>
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Button Text</label>
-                      <input
-                        type="text"
-                        value={welcomeButtonText}
-                        onChange={(e) => setWelcomeButtonText(e.target.value)}
-                        placeholder="Continue"
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl"
-                      />
-                    </div>
                   </div>
+                )}
+              </div>
 
+              {/* Optional Expiration Date */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="flex items-center gap-2 font-bold text-slate-800">
+                    <Calendar className="w-4 h-4 text-slate-600" />
+                    <span>Optional Expiration Date</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={hasExpiry}
+                    onChange={(e) => setHasExpiry(e.target.checked)}
+                    className="w-4 h-4 rounded cursor-pointer"
+                  />
+                </label>
+
+                {hasExpiry && (
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Welcome Message</label>
                     <input
-                      type="text"
-                      value={welcomeSubheadline}
-                      onChange={(e) => setWelcomeSubheadline(e.target.value)}
-                      placeholder="Short greeting shown when scanned"
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl"
+                      type="datetime-local"
+                      required={hasExpiry}
+                      value={expiresAt}
+                      onChange={(e) => setExpiresAt(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-xs text-slate-900"
                     />
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Live Mobile Preview BEFORE Generating */}
+            <div className="lg:col-span-5 lg:sticky lg:top-0">
+              <div className="bg-slate-50 rounded-2xl border border-slate-200 p-3.5 space-y-3">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                    <Smartphone className="w-4 h-4 text-emerald-600" />
+                    <span>Live Preview</span>
+                  </div>
+
+                  <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200 text-[11px]">
+                    {welcomeEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTab('welcome')}
+                        className={`px-2.5 py-1 rounded-md font-semibold cursor-pointer ${
+                          previewTab === 'welcome'
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Welcome
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTab('content')}
+                      className={`px-2.5 py-1 rounded-md font-semibold cursor-pointer ${
+                        previewTab === 'content'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Menu / File
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTab('qr')}
+                      className={`px-2.5 py-1 rounded-md font-semibold cursor-pointer ${
+                        previewTab === 'qr'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      QR
+                    </button>
+                  </div>
                 </div>
-              )}
+
+                {previewTab === 'qr' ? (
+                  <div className="h-[540px] bg-white rounded-[30px] border border-slate-200 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                    <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                      {liveQrImg ? (
+                        <img
+                          src={liveQrImg}
+                          alt={draftQR.title}
+                          className="w-52 h-52 object-contain"
+                        />
+                      ) : (
+                        <div className="w-52 h-52 bg-slate-100 animate-pulse rounded-xl flex items-center justify-center">
+                          <QrCodeIcon className="w-10 h-10 text-slate-300" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">{draftQR.title}</div>
+                    <div className="text-[11px] text-slate-500">
+                      Preview before generating &amp; downloading
+                    </div>
+                  </div>
+                ) : (
+                  <MobileDeviceFrame width="100%" height={540} restaurantName={draftQR.title}>
+                    <QRScanLandingView
+                      qrCode={draftQR}
+                      restaurant={restaurant || INITIAL_RESTAURANT}
+                      theme={theme}
+                      isPreview={true}
+                      previewStage={previewTab === 'welcome' && welcomeEnabled ? 'welcome' : 'content'}
+                      onPreviewStageChange={(stage) =>
+                        setPreviewTab(stage === 'welcome' ? 'welcome' : 'content')
+                      }
+                    />
+                  </MobileDeviceFrame>
+                )}
+              </div>
             </div>
           </div>
 

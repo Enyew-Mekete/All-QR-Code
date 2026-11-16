@@ -19,9 +19,297 @@ export const pool = new Pool(
 
 export let isDatabaseReady = false;
 
+export interface MemoryStore {
+  roles: any[];
+  users: any[];
+  categories: any[];
+  qrCodes: any[];
+  scanEvents: any[];
+  otps: any[];
+  notificationLogs: any[];
+  appSettings: Record<string, any>;
+}
+
+function buildInitialUsers() {
+  return [
+    {
+      id: 'user_super_admin',
+      name: 'Enyew Mekete',
+      email: 'enyewmekete65@gmail.com',
+      phone: '+251943305937',
+      role_id: 'super_admin',
+      password: 'SuperAdmin@2026',
+      must_change_password: false,
+      otp_enabled: false,
+      status: 'active',
+      created_at: '2026-01-01T00:00:00Z',
+      last_login_at: '2026-11-12T08:00:00Z',
+      deleted_at: null,
+    },
+    {
+      id: 'user_admin_demo',
+      name: 'Hermela B.',
+      email: 'admin@qrcodegenerator.io',
+      phone: '+251911223344',
+      role_id: 'admin',
+      password: 'Admin@2026',
+      must_change_password: false,
+      otp_enabled: true,
+      status: 'active',
+      created_at: '2026-02-01T00:00:00Z',
+      last_login_at: '2026-11-10T12:00:00Z',
+      deleted_at: null,
+    },
+  ];
+}
+
+function buildInitialQRCodes() {
+  return [
+    {
+      id: 'qr_web_01',
+      restaurantId: 'company_qr_01',
+      categoryId: 'cat_website',
+      title: 'Official Company Portal',
+      description: 'Connecting you instantly to our official platform',
+      ctaLabel: 'See More',
+      type: 'website',
+      targetUrl: 'https://qrcodegenerator.io',
+      shortUrl: 'dineqr.io/portal-main',
+      scansCount: 428,
+      lastScanAt: '2026-11-12T01:30:00Z',
+      status: 'active',
+      createdAt: '2026-10-15T10:00:00Z',
+      styling: {
+        fgColor: '#059669',
+        bgColor: '#ffffff',
+        frameStyle: 'scan-me',
+        frameText: 'VISIT WEBSITE',
+        dotStyle: 'rounded',
+        logoInCenter: true,
+        size: 280,
+      },
+      welcomeScreen: {
+        enabled: true,
+        headline: 'Welcome to Our Digital Space',
+        subheadline: 'Connecting you instantly to our official platform',
+        buttonText: 'Continue',
+        displaySeconds: 2,
+      },
+      uploadedFiles: [],
+    },
+    {
+      id: 'qr_telegram_01',
+      restaurantId: 'company_qr_01',
+      categoryId: 'cat_telegram',
+      title: 'Telegram Official Broadcast Channel',
+      description: 'Fastest updates and direct customer support on Telegram',
+      ctaLabel: 'See More',
+      type: 'telegram',
+      targetUrl: 'https://t.me/qrcodegenerator_updates',
+      shortUrl: 'dineqr.io/telegram-join',
+      scansCount: 286,
+      lastScanAt: '2026-11-11T19:40:00Z',
+      status: 'active',
+      createdAt: '2026-10-20T11:00:00Z',
+      styling: {
+        fgColor: '#0284c7',
+        bgColor: '#ffffff',
+        frameStyle: 'minimal-border',
+        frameText: 'JOIN TELEGRAM',
+        dotStyle: 'dots',
+        logoInCenter: true,
+        size: 280,
+      },
+      welcomeScreen: {
+        enabled: true,
+        headline: 'Join Our Community',
+        subheadline: 'Fastest updates and direct customer support on Telegram',
+        buttonText: 'Continue',
+        displaySeconds: 2,
+      },
+      uploadedFiles: [],
+    },
+    {
+      id: 'qr_youtube_01',
+      restaurantId: 'company_qr_01',
+      categoryId: 'cat_youtube',
+      title: 'YouTube Product Showcase & Demo',
+      description: 'Watch our official product demonstrations and walkthroughs',
+      ctaLabel: 'See More',
+      type: 'youtube',
+      targetUrl: 'https://youtube.com/@qrcodegenerator',
+      shortUrl: 'dineqr.io/youtube-channel',
+      scansCount: 194,
+      lastScanAt: '2026-11-10T14:15:00Z',
+      status: 'active',
+      createdAt: '2026-10-25T09:00:00Z',
+      styling: {
+        fgColor: '#dc2626',
+        bgColor: '#ffffff',
+        frameStyle: 'badge-top',
+        frameText: 'WATCH ON YOUTUBE',
+        dotStyle: 'square',
+        logoInCenter: true,
+        size: 280,
+      },
+      welcomeScreen: null,
+      uploadedFiles: [],
+    },
+    {
+      id: 'qr_menu_01',
+      restaurantId: 'company_qr_01',
+      categoryId: 'cat_restaurant',
+      title: "Guansa Ma'ed Menu (Table 04)",
+      description: 'GOOD FOOD · GOOD MOOD — Fresh Ingredients, Authentic Flavors',
+      ctaLabel: 'See More',
+      type: 'table_standee',
+      tableNumber: 4,
+      targetUrl: 'https://guansa-maed-mu.vercel.app',
+      shortUrl: 'dineqr.io/table-04',
+      scansCount: 164,
+      lastScanAt: '2026-11-12T01:12:00Z',
+      status: 'active',
+      createdAt: '2026-10-18T14:20:00Z',
+      styling: {
+        fgColor: '#0f172a',
+        bgColor: '#ffffff',
+        frameStyle: 'table-card',
+        frameText: 'TABLE 04 · SCAN TO VIEW',
+        dotStyle: 'dots',
+        logoInCenter: true,
+        customLogoUrl: '/assets/guansa_logo.png',
+        size: 280,
+      },
+      welcomeScreen: {
+        enabled: true,
+        logoUrl: '/assets/guansa_logo.png',
+        headline: "Guansa Ma'ed",
+        subheadline: 'GOOD FOOD · GOOD MOOD — Fresh Ingredients, Authentic Flavors',
+        bannerColor: '#0f172a',
+        buttonText: 'View Menu',
+        displaySeconds: 2,
+      },
+      uploadedFiles: [
+        {
+          id: 'menu_sheet_official',
+          name: 'Guansa Coffee Hub Menu.png',
+          type: 'image',
+          url: '/assets/guansa_menu_card.png',
+          sizeFormatted: '652 × 922 HD',
+          uploadedAt: '2026-10-29T18:30:00Z',
+          caption: "Guansa Ma'ed Digital Menu",
+        },
+      ],
+    },
+  ];
+}
+
+function buildInitialScanEvents() {
+  return [
+    {
+      id: 'scan_seed_1',
+      qr_id: 'qr_web_01',
+      qr_title: 'Official Company Portal',
+      timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
+      device: 'iOS',
+      city: 'Addis Ababa, ET',
+    },
+    {
+      id: 'scan_seed_2',
+      qr_id: 'qr_telegram_01',
+      qr_title: 'Telegram Official Broadcast Channel',
+      timestamp: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
+      device: 'Android',
+      city: 'Bahir Dar, ET',
+    },
+    {
+      id: 'scan_seed_3',
+      qr_id: 'qr_youtube_01',
+      qr_title: 'YouTube Product Showcase & Demo',
+      timestamp: new Date(Date.now() - 1000 * 60 * 80).toISOString(),
+      device: 'Desktop',
+      city: 'Hawassa, ET',
+    },
+    {
+      id: 'scan_seed_4',
+      qr_id: 'qr_menu_01',
+      qr_title: "Guansa Ma'ed Menu (Table 04)",
+      timestamp: new Date(Date.now() - 1000 * 60 * 140).toISOString(),
+      device: 'iOS',
+      city: 'Addis Ababa, ET',
+    },
+  ];
+}
+
+export const memoryStore: MemoryStore = {
+  roles: [],
+  users: [],
+  categories: [],
+  qrCodes: [],
+  scanEvents: [],
+  otps: [],
+  notificationLogs: [],
+  appSettings: {},
+};
+
+export function resetMemoryStore(): void {
+  memoryStore.roles = INITIAL_ROLES.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    is_system: Boolean(r.isSystem),
+    privileges: JSON.parse(JSON.stringify(r.privileges)),
+    created_at: r.createdAt || new Date().toISOString(),
+    deleted_at: r.deletedAt || null,
+  }));
+  memoryStore.users = buildInitialUsers();
+  memoryStore.categories = INITIAL_CATEGORIES.map((c) => ({
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    icon: c.icon,
+    description: c.description,
+    display_order: c.displayOrder,
+    created_at: c.createdAt,
+    deleted_at: null,
+  }));
+  memoryStore.qrCodes = buildInitialQRCodes().map((q) => ({
+    id: q.id,
+    restaurant_id: q.restaurantId,
+    category_id: q.categoryId,
+    title: q.title,
+    description: q.description || '',
+    cta_label: q.ctaLabel || 'See More',
+    type: q.type,
+    target_url: q.targetUrl,
+    table_number: q.tableNumber ?? null,
+    short_url: q.shortUrl,
+    scans_count: q.scansCount,
+    last_scan_at: q.lastScanAt,
+    status: q.status,
+    created_at: q.createdAt,
+    expires_at: null,
+    styling: q.styling,
+    welcome_screen: q.welcomeScreen,
+    uploaded_files: q.uploadedFiles || [],
+    deleted_at: null,
+  }));
+  memoryStore.scanEvents = buildInitialScanEvents();
+  memoryStore.otps = [];
+  memoryStore.notificationLogs = [];
+  memoryStore.appSettings = {
+    theme: JSON.parse(JSON.stringify(INITIAL_THEMES[0])),
+    company_profile: JSON.parse(JSON.stringify(INITIAL_RESTAURANT)),
+  };
+}
+
+resetMemoryStore();
+
 export async function initDatabase(): Promise<boolean> {
   if (!connectionString) {
-    console.warn('[DB] DATABASE_URL is not configured in .env; running in local fallback mode.');
+    console.warn('[DB] DATABASE_URL is not configured; using in-memory store fallback.');
+    resetMemoryStore();
+    isDatabaseReady = false;
     return false;
   }
 
@@ -71,6 +359,8 @@ export async function initDatabase(): Promise<boolean> {
         restaurant_id TEXT,
         category_id TEXT,
         title TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        cta_label TEXT DEFAULT 'See More',
         type TEXT NOT NULL,
         target_url TEXT NOT NULL,
         table_number INTEGER,
@@ -82,8 +372,13 @@ export async function initDatabase(): Promise<boolean> {
         expires_at TIMESTAMPTZ,
         styling JSONB NOT NULL,
         welcome_screen JSONB,
+        uploaded_files JSONB DEFAULT '[]'::jsonb,
         deleted_at TIMESTAMPTZ
       );
+
+      ALTER TABLE qr_codes ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+      ALTER TABLE qr_codes ADD COLUMN IF NOT EXISTS cta_label TEXT DEFAULT 'See More';
+      ALTER TABLE qr_codes ADD COLUMN IF NOT EXISTS uploaded_files JSONB DEFAULT '[]'::jsonb;
 
       CREATE TABLE IF NOT EXISTS scan_events (
         id TEXT PRIMARY KEY,
@@ -133,13 +428,19 @@ export async function initDatabase(): Promise<boolean> {
     console.log('[DB] Connected to PostgreSQL ("QR Code Generator") and ensured schema tables.');
     return true;
   } catch (err) {
-    console.error('[DB] PostgreSQL initialization failed:', err);
+    console.error('[DB] PostgreSQL initialization failed; falling back to in-memory store:', err);
+    resetMemoryStore();
     isDatabaseReady = false;
     return false;
   }
 }
 
 export async function seedInitialData(): Promise<void> {
+  if (!connectionString) {
+    resetMemoryStore();
+    return;
+  }
+
   // 1. Seed Roles
   const roleCount = await pool.query('SELECT COUNT(*)::int AS count FROM roles');
   if (roleCount.rows[0].count === 0) {
@@ -164,36 +465,7 @@ export async function seedInitialData(): Promise<void> {
   // 2. Seed Users
   const userCount = await pool.query('SELECT COUNT(*)::int AS count FROM users');
   if (userCount.rows[0].count === 0) {
-    const initialUsers = [
-      {
-        id: 'user_super_admin',
-        name: 'Enyew Mekete',
-        email: 'enyewmekete65@gmail.com',
-        phone: '+251943305937',
-        role_id: 'super_admin',
-        password: 'SuperAdmin@2026',
-        must_change_password: false,
-        otp_enabled: false,
-        status: 'active',
-        created_at: '2026-01-01T00:00:00Z',
-        last_login_at: '2026-11-12T08:00:00Z',
-      },
-      {
-        id: 'user_admin_demo',
-        name: 'Hermela B.',
-        email: 'admin@qrcodegenerator.io',
-        phone: '+251911223344',
-        role_id: 'admin',
-        password: 'Admin@2026',
-        must_change_password: false,
-        otp_enabled: true,
-        status: 'active',
-        created_at: '2026-02-01T00:00:00Z',
-        last_login_at: '2026-11-10T12:00:00Z',
-      },
-    ];
-
-    for (const u of initialUsers) {
+    for (const u of buildInitialUsers()) {
       await pool.query(
         `INSERT INTO users (id, name, email, phone, role_id, password, must_change_password, otp_enabled, status, created_at, last_login_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -231,122 +503,18 @@ export async function seedInitialData(): Promise<void> {
   // 4. Seed QR Codes
   const qrCount = await pool.query('SELECT COUNT(*)::int AS count FROM qr_codes');
   if (qrCount.rows[0].count === 0) {
-    const initialQRs = [
-      {
-        id: 'qr_web_01',
-        restaurantId: 'company_qr_01',
-        categoryId: 'cat_website',
-        title: 'Official Company Portal',
-        type: 'website',
-        targetUrl: 'https://qrcodegenerator.io',
-        shortUrl: 'dineqr.io/portal-main',
-        scansCount: 428,
-        lastScanAt: '2026-11-12T01:30:00Z',
-        status: 'active',
-        createdAt: '2026-10-15T10:00:00Z',
-        styling: {
-          fgColor: '#059669',
-          bgColor: '#ffffff',
-          frameStyle: 'scan-me',
-          frameText: 'VISIT WEBSITE',
-          dotStyle: 'rounded',
-          logoInCenter: true,
-          size: 280,
-        },
-        welcomeScreen: {
-          enabled: true,
-          headline: 'Welcome to Our Digital Space',
-          subheadline: 'Connecting you instantly to our official platform',
-          displaySeconds: 2,
-        },
-      },
-      {
-        id: 'qr_telegram_01',
-        restaurantId: 'company_qr_01',
-        categoryId: 'cat_telegram',
-        title: 'Telegram Official Broadcast Channel',
-        type: 'telegram',
-        targetUrl: 'https://t.me/qrcodegenerator_updates',
-        shortUrl: 'dineqr.io/telegram-join',
-        scansCount: 286,
-        lastScanAt: '2026-11-11T19:40:00Z',
-        status: 'active',
-        createdAt: '2026-10-20T11:00:00Z',
-        styling: {
-          fgColor: '#0284c7',
-          bgColor: '#ffffff',
-          frameStyle: 'minimal-border',
-          frameText: 'JOIN TELEGRAM',
-          dotStyle: 'dots',
-          logoInCenter: true,
-          size: 280,
-        },
-        welcomeScreen: {
-          enabled: true,
-          headline: 'Join Our Community',
-          subheadline: 'Fastest updates and direct customer support on Telegram',
-          displaySeconds: 2,
-        },
-      },
-      {
-        id: 'qr_youtube_01',
-        restaurantId: 'company_qr_01',
-        categoryId: 'cat_youtube',
-        title: 'YouTube Product Showcase & Demo',
-        type: 'youtube',
-        targetUrl: 'https://youtube.com/@qrcodegenerator',
-        shortUrl: 'dineqr.io/youtube-channel',
-        scansCount: 194,
-        lastScanAt: '2026-11-10T14:15:00Z',
-        status: 'active',
-        createdAt: '2026-10-25T09:00:00Z',
-        styling: {
-          fgColor: '#dc2626',
-          bgColor: '#ffffff',
-          frameStyle: 'badge-top',
-          frameText: 'WATCH ON YOUTUBE',
-          dotStyle: 'square',
-          logoInCenter: true,
-          size: 280,
-        },
-        welcomeScreen: null,
-      },
-      {
-        id: 'qr_menu_01',
-        restaurantId: 'company_qr_01',
-        categoryId: 'cat_restaurant',
-        title: 'Table 04 Contactless Dine-In',
-        type: 'table_standee',
-        tableNumber: 4,
-        targetUrl: 'https://qrcodegenerator.io/menu',
-        shortUrl: 'dineqr.io/table-04',
-        scansCount: 164,
-        lastScanAt: '2026-11-12T01:12:00Z',
-        status: 'active',
-        createdAt: '2026-10-18T14:20:00Z',
-        styling: {
-          fgColor: '#0f172a',
-          bgColor: '#ffffff',
-          frameStyle: 'table-card',
-          frameText: 'TABLE 04 · SCAN TO VIEW',
-          dotStyle: 'dots',
-          logoInCenter: true,
-          size: 280,
-        },
-        welcomeScreen: null,
-      },
-    ];
-
-    for (const q of initialQRs) {
+    for (const q of buildInitialQRCodes()) {
       await pool.query(
-        `INSERT INTO qr_codes (id, restaurant_id, category_id, title, type, target_url, table_number, short_url, scans_count, last_scan_at, status, created_at, styling, welcome_screen)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)
+        `INSERT INTO qr_codes (id, restaurant_id, category_id, title, description, cta_label, type, target_url, table_number, short_url, scans_count, last_scan_at, status, created_at, styling, welcome_screen, uploaded_files)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb)
          ON CONFLICT (id) DO NOTHING`,
         [
           q.id,
           q.restaurantId,
           q.categoryId,
           q.title,
+          q.description || '',
+          q.ctaLabel || 'See More',
           q.type,
           q.targetUrl,
           q.tableNumber ?? null,
@@ -357,6 +525,7 @@ export async function seedInitialData(): Promise<void> {
           q.createdAt,
           JSON.stringify(q.styling),
           q.welcomeScreen ? JSON.stringify(q.welcomeScreen) : null,
+          JSON.stringify(q.uploadedFiles || []),
         ]
       );
     }
@@ -365,46 +534,12 @@ export async function seedInitialData(): Promise<void> {
   // 5. Seed Scan Events
   const scanCount = await pool.query('SELECT COUNT(*)::int AS count FROM scan_events');
   if (scanCount.rows[0].count === 0) {
-    const seeded = [
-      {
-        id: 'scan_seed_1',
-        qrId: 'qr_web_01',
-        qrTitle: 'Official Company Portal',
-        timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
-        device: 'iOS',
-        city: 'Addis Ababa, ET',
-      },
-      {
-        id: 'scan_seed_2',
-        qrId: 'qr_telegram_01',
-        qrTitle: 'Telegram Official Broadcast Channel',
-        timestamp: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
-        device: 'Android',
-        city: 'Bahir Dar, ET',
-      },
-      {
-        id: 'scan_seed_3',
-        qrId: 'qr_youtube_01',
-        qrTitle: 'YouTube Product Showcase & Demo',
-        timestamp: new Date(Date.now() - 1000 * 60 * 80).toISOString(),
-        device: 'Desktop',
-        city: 'Hawassa, ET',
-      },
-      {
-        id: 'scan_seed_4',
-        qrId: 'qr_menu_01',
-        qrTitle: 'Table 04 Contactless Dine-In',
-        timestamp: new Date(Date.now() - 1000 * 60 * 140).toISOString(),
-        device: 'iOS',
-        city: 'Addis Ababa, ET',
-      },
-    ];
-    for (const ev of seeded) {
+    for (const ev of buildInitialScanEvents()) {
       await pool.query(
         `INSERT INTO scan_events (id, qr_id, qr_title, timestamp, device, city)
          VALUES ($1,$2,$3,$4,$5,$6)
          ON CONFLICT (id) DO NOTHING`,
-        [ev.id, ev.qrId, ev.qrTitle, ev.timestamp, ev.device, ev.city]
+        [ev.id, ev.qr_id, ev.qr_title, ev.timestamp, ev.device, ev.city]
       );
     }
   }

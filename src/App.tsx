@@ -319,8 +319,10 @@ export default function App() {
       restaurantId: restaurant.id,
       categoryId: newQRPartial.categoryId || creatorDefaultCategoryId || categories[0]?.id,
       title: newQRPartial.title || 'Dynamic QR Code',
+      description: newQRPartial.description || '',
+      ctaLabel: newQRPartial.ctaLabel || 'See More',
       type: newQRPartial.type || 'website',
-      targetUrl: newQRPartial.targetUrl || 'https://qrcodegenerator.io',
+      targetUrl: newQRPartial.targetUrl || '',
       shortUrl:
         newQRPartial.shortUrl ||
         `dineqr.io/${Math.random().toString(36).slice(2, 7)}`,
@@ -329,6 +331,7 @@ export default function App() {
       createdAt: new Date().toISOString(),
       expiresAt: newQRPartial.expiresAt ?? null,
       welcomeScreen: newQRPartial.welcomeScreen,
+      uploadedFiles: newQRPartial.uploadedFiles || [],
       styling: newQRPartial.styling || {
         fgColor: '#059669',
         bgColor: '#ffffff',
@@ -632,6 +635,7 @@ export default function App() {
           categories={categories}
           defaultCategoryId={creatorDefaultCategoryId}
           theme={theme}
+          restaurant={restaurant}
           onClose={() => {
             setIsCreatorOpen(false);
             setCreatorDefaultCategoryId(undefined);

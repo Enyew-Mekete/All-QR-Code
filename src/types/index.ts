@@ -109,6 +109,8 @@ export interface RestaurantQRCode {
   restaurantId: string;
   categoryId?: string; // Links to QRCategory
   title: string;
+  description?: string;
+  ctaLabel?: string;
   type: QRDestinationType;
   targetUrl: string; // Destination URL (website, Telegram, YouTube, Social media, etc.)
   tableNumber?: number;
@@ -121,6 +123,7 @@ export interface RestaurantQRCode {
   isExpired?: boolean;
   styling: QRCodeStyling;
   welcomeScreen?: WelcomeScreenConfig; // Welcome screen per QR code
+  uploadedFiles?: UploadedMenuFile[]; // Per-QR uploaded images, PDFs, menus, catalogs
   deletedAt?: string | null; // Soft delete
 }
 

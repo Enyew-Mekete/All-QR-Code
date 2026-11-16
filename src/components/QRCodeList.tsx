@@ -368,7 +368,11 @@ export const QRCodeList: React.FC<QRCodeListProps> = ({
                     </div>
 
                     <div className="text-[11px] font-mono text-slate-500 mt-1 truncate max-w-lg">
-                      Target: {qr.targetUrl}
+                      {qr.targetUrl
+                        ? `Target: ${qr.targetUrl}`
+                        : qr.uploadedFiles && qr.uploadedFiles.length > 0
+                        ? `Uploaded Files: ${qr.uploadedFiles.map((f) => f.name).join(', ')}`
+                        : 'Dynamic QR Content'}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 mt-2">

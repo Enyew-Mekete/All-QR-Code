@@ -1,5 +1,11 @@
 import express from 'express';
-import { pool, isDatabaseReady, seedInitialData } from './db.ts';
+import {
+  pool,
+  isDatabaseReady,
+  seedInitialData,
+  memoryStore,
+  resetMemoryStore,
+} from './db.ts';
 import {
   dispatchNotification,
   generate6DigitOTP,
@@ -65,6 +71,8 @@ function mapQRRow(row: any) {
     restaurantId: row.restaurant_id || 'company_qr_01',
     categoryId: row.category_id || undefined,
     title: row.title,
+    description: row.description || undefined,
+    ctaLabel: row.cta_label || undefined,
     type: row.type,
     targetUrl: row.target_url,
     tableNumber: row.table_number ?? undefined,
@@ -77,6 +85,7 @@ function mapQRRow(row: any) {
     isExpired,
     styling: row.styling,
     welcomeScreen: row.welcome_screen || undefined,
+    uploadedFiles: Array.isArray(row.uploaded_files) ? row.uploaded_files : [],
     deletedAt: row.deleted_at ? new Date(row.deleted_at).toISOString() : null,
   };
 }
@@ -123,18 +132,10 @@ function mapNotificationRow(row: any) {
   };
 }
 
-// Middleware to guard DB availability
-function requireDb(_req: express.Request, res: express.Response, next: express.NextFunction) {
-  if (!isDatabaseReady) {
-    return res.status(503).json({ success: false, error: 'PostgreSQL database is unavailable.' });
-  }
-  next();
-}
-
 apiRouter.get('/health', async (_req, res) => {
   try {
     if (!isDatabaseReady) {
-      return res.status(503).json({ ok: false, database: 'disconnected' });
+      return res.json({ ok: true, database: 'In-Memory Store (Fallback)' });
     }
     await pool.query('SELECT 1');
     return res.json({ ok: true, database: 'QR Code Generator (PostgreSQL)' });
@@ -144,8 +145,27 @@ apiRouter.get('/health', async (_req, res) => {
 });
 
 // ==================== BOOTSTRAP ====================
-apiRouter.get('/bootstrap', requireDb, async (_req, res) => {
+apiRouter.get('/bootstrap', async (_req, res) => {
   try {
+    if (!isDatabaseReady) {
+      return res.json({
+        success: true,
+        roles: memoryStore.roles.map(mapRoleRow),
+        users: memoryStore.users.map((u) => mapUserRow(u, false)),
+        categories: [...memoryStore.categories]
+          .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+          .map(mapCategoryRow),
+        qrCodes: [...memoryStore.qrCodes]
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .map(mapQRRow),
+        scanEvents: memoryStore.scanEvents.slice(0, 300).map(mapScanRow),
+        otps: memoryStore.otps.slice(0, 50).map(mapOTPRow),
+        notifications: memoryStore.notificationLogs.slice(0, 100).map(mapNotificationRow),
+        theme: memoryStore.appSettings.theme || INITIAL_THEMES[0],
+        restaurant: memoryStore.appSettings.company_profile || INITIAL_RESTAURANT,
+      });
+    }
+
     const [rolesRes, usersRes, catsRes, qrsRes, scansRes, otpsRes, logsRes, settingsRes] =
       await Promise.all([
         pool.query('SELECT * FROM roles ORDER BY created_at ASC'),
@@ -181,7 +201,7 @@ apiRouter.get('/bootstrap', requireDb, async (_req, res) => {
 });
 
 // ==================== AUTH & OTP ====================
-apiRouter.post('/auth/login', requireDb, async (req, res) => {
+apiRouter.post('/auth/login', async (req, res) => {
   try {
     const { identifier, password } = req.body || {};
     const trimmed = String(identifier || '').trim().toLowerCase();
@@ -189,14 +209,21 @@ apiRouter.post('/auth/login', requireDb, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Username/email and password are required.' });
     }
 
-    const { rows } = await pool.query(
-      `SELECT * FROM users
-       WHERE deleted_at IS NULL AND (LOWER(email) = $1 OR LOWER(name) = $1)
-       LIMIT 1`,
-      [trimmed]
-    );
+    let userRow: any;
+    if (!isDatabaseReady) {
+      userRow = memoryStore.users.find(
+        (u) => !u.deleted_at && (u.email.toLowerCase() === trimmed || u.name.toLowerCase() === trimmed)
+      );
+    } else {
+      const { rows } = await pool.query(
+        `SELECT * FROM users
+         WHERE deleted_at IS NULL AND (LOWER(email) = $1 OR LOWER(name) = $1)
+         LIMIT 1`,
+        [trimmed]
+      );
+      userRow = rows[0];
+    }
 
-    const userRow = rows[0];
     if (!userRow) {
       return res.status(401).json({ success: false, error: 'Invalid username or password. Please verify your credentials.' });
     }
@@ -213,11 +240,27 @@ apiRouter.post('/auth/login', requireDb, async (req, res) => {
       const code = generate6DigitOTP();
       const otpId = `otp_${Date.now()}`;
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-      await pool.query(
-        `INSERT INTO otps (id, user_id, email, phone, code, type, sent_via, expires_at, used, created_at)
-         VALUES ($1,$2,$3,$4,$5,'login','["email","sms"]'::jsonb,$6,false,NOW())`,
-        [otpId, user.id, user.email, user.phone || '', code, expiresAt]
-      );
+
+      if (!isDatabaseReady) {
+        memoryStore.otps.unshift({
+          id: otpId,
+          user_id: user.id,
+          email: user.email,
+          phone: user.phone || '',
+          code,
+          type: 'login',
+          sent_via: ['email', 'sms'],
+          expires_at: expiresAt,
+          used: false,
+          created_at: new Date().toISOString(),
+        });
+      } else {
+        await pool.query(
+          `INSERT INTO otps (id, user_id, email, phone, code, type, sent_via, expires_at, used, created_at)
+           VALUES ($1,$2,$3,$4,$5,'login','["email","sms"]'::jsonb,$6,false,NOW())`,
+          [otpId, user.id, user.email, user.phone || '', code, expiresAt]
+        );
+      }
 
       await dispatchNotification({
         toEmail: user.email,
@@ -241,18 +284,44 @@ apiRouter.post('/auth/login', requireDb, async (req, res) => {
       return res.json({ success: true, step: 'force_password_change', user });
     }
 
-    await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+    if (!isDatabaseReady) {
+      userRow.last_login_at = new Date().toISOString();
+    } else {
+      await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+    }
     return res.json({ success: true, step: 'authenticated', user });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Login failed' });
   }
 });
 
-apiRouter.post('/auth/verify-otp', requireDb, async (req, res) => {
+apiRouter.post('/auth/verify-otp', async (req, res) => {
   try {
     const { email, code } = req.body || {};
     const trimmedEmail = String(email || '').trim().toLowerCase();
     const trimmedCode = String(code || '').trim();
+
+    if (!isDatabaseReady) {
+      const otpRow = memoryStore.otps.find(
+        (o) =>
+          o.email.toLowerCase() === trimmedEmail &&
+          o.code === trimmedCode &&
+          !o.used &&
+          new Date(o.expires_at).getTime() > Date.now()
+      );
+      if (!otpRow) {
+        return res.status(400).json({ success: false, error: 'Invalid or expired OTP code. Please request a new one.' });
+      }
+      otpRow.used = true;
+      const userRow = memoryStore.users.find((u) => !u.deleted_at && u.email.toLowerCase() === trimmedEmail);
+      if (!userRow) return res.status(404).json({ success: false, error: 'User account not found.' });
+      const user = mapUserRow(userRow, false);
+      if (user.mustChangePassword) {
+        return res.json({ success: true, step: 'force_password_change', user });
+      }
+      userRow.last_login_at = new Date().toISOString();
+      return res.json({ success: true, step: 'authenticated', user });
+    }
 
     const { rows } = await pool.query(
       `SELECT * FROM otps
@@ -284,23 +353,46 @@ apiRouter.post('/auth/verify-otp', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/auth/resend-otp', requireDb, async (req, res) => {
+apiRouter.post('/auth/resend-otp', async (req, res) => {
   try {
     const { email } = req.body || {};
     const trimmedEmail = String(email || '').trim().toLowerCase();
-    const userRes = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1 AND deleted_at IS NULL LIMIT 1', [trimmedEmail]);
-    if (userRes.rows.length === 0) {
+
+    let userRow: any;
+    if (!isDatabaseReady) {
+      userRow = memoryStore.users.find((u) => !u.deleted_at && u.email.toLowerCase() === trimmedEmail);
+    } else {
+      const userRes = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1 AND deleted_at IS NULL LIMIT 1', [trimmedEmail]);
+      userRow = userRes.rows[0];
+    }
+
+    if (!userRow) {
       return res.status(404).json({ success: false, error: 'User not found.' });
     }
-    const user = mapUserRow(userRes.rows[0], false);
+    const user = mapUserRow(userRow, false);
     const code = generate6DigitOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await pool.query(
-      `INSERT INTO otps (id, user_id, email, phone, code, type, sent_via, expires_at, used, created_at)
-       VALUES ($1,$2,$3,$4,$5,'login','["email","sms"]'::jsonb,$6,false,NOW())`,
-      [`otp_${Date.now()}`, user.id, user.email, user.phone || '', code, expiresAt]
-    );
+    if (!isDatabaseReady) {
+      memoryStore.otps.unshift({
+        id: `otp_${Date.now()}`,
+        user_id: user.id,
+        email: user.email,
+        phone: user.phone || '',
+        code,
+        type: 'login',
+        sent_via: ['email', 'sms'],
+        expires_at: expiresAt,
+        used: false,
+        created_at: new Date().toISOString(),
+      });
+    } else {
+      await pool.query(
+        `INSERT INTO otps (id, user_id, email, phone, code, type, sent_via, expires_at, used, created_at)
+         VALUES ($1,$2,$3,$4,$5,'login','["email","sms"]'::jsonb,$6,false,NOW())`,
+        [`otp_${Date.now()}`, user.id, user.email, user.phone || '', code, expiresAt]
+      );
+    }
 
     await dispatchNotification({
       toEmail: user.email,
@@ -321,7 +413,7 @@ apiRouter.post('/auth/resend-otp', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/auth/change-password', requireDb, async (req, res) => {
+apiRouter.post('/auth/change-password', async (req, res) => {
   try {
     const { userId, newPassword } = req.body || {};
     const strength = validatePasswordStrength(String(newPassword || ''));
@@ -330,6 +422,15 @@ apiRouter.post('/auth/change-password', requireDb, async (req, res) => {
         success: false,
         error: 'Password must be at least 8 characters and include 1 Capital, 1 Small, 1 Number, and 1 Special character.',
       });
+    }
+
+    if (!isDatabaseReady) {
+      const userRow = memoryStore.users.find((u) => u.id === userId && !u.deleted_at);
+      if (!userRow) return res.status(404).json({ success: false, error: 'User not found.' });
+      userRow.password = newPassword;
+      userRow.must_change_password = false;
+      userRow.last_login_at = new Date().toISOString();
+      return res.json({ success: true, user: mapUserRow(userRow, false) });
     }
 
     const { rows } = await pool.query(
@@ -350,8 +451,8 @@ apiRouter.post('/auth/change-password', requireDb, async (req, res) => {
   }
 });
 
-// ==================== USERS MANAGEMENT (CREATE, EDIT, RESET, OTP TOGGLE, SOFT DELETE, RESTORE) ====================
-apiRouter.post('/users', requireDb, async (req, res) => {
+// ==================== USERS MANAGEMENT ====================
+apiRouter.post('/users', async (req, res) => {
   try {
     const { name, email, phone, role, otpEnabled } = req.body || {};
     const trimmedEmail = String(email || '').trim().toLowerCase();
@@ -362,24 +463,46 @@ apiRouter.post('/users', requireDb, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Full Name and Email are required.' });
     }
 
-    const existing = await pool.query(
-      'SELECT id FROM users WHERE LOWER(email) = $1 AND deleted_at IS NULL',
-      [trimmedEmail]
-    );
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ success: false, error: 'A user with this email already exists in QR Code Generator.' });
-    }
-
     const tempPassword = generate7DigitMixedPassword();
     const id = `usr_${Date.now()}`;
     const otpFlag = otpEnabled !== undefined ? Boolean(otpEnabled) : true;
 
-    const { rows } = await pool.query(
-      `INSERT INTO users (id, name, email, phone, role_id, password, must_change_password, otp_enabled, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,true,$7,'active',NOW())
-       RETURNING *`,
-      [id, trimmedName, trimmedEmail, trimmedPhone, role || 'admin', tempPassword, otpFlag]
-    );
+    let createdRow: any;
+    if (!isDatabaseReady) {
+      const existing = memoryStore.users.find((u) => !u.deleted_at && u.email.toLowerCase() === trimmedEmail);
+      if (existing) {
+        return res.status(409).json({ success: false, error: 'A user with this email already exists in QR Code Generator.' });
+      }
+      createdRow = {
+        id,
+        name: trimmedName,
+        email: trimmedEmail,
+        phone: trimmedPhone,
+        role_id: role || 'admin',
+        password: tempPassword,
+        must_change_password: true,
+        otp_enabled: otpFlag,
+        status: 'active',
+        created_at: new Date().toISOString(),
+        deleted_at: null,
+      };
+      memoryStore.users.push(createdRow);
+    } else {
+      const existing = await pool.query(
+        'SELECT id FROM users WHERE LOWER(email) = $1 AND deleted_at IS NULL',
+        [trimmedEmail]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(409).json({ success: false, error: 'A user with this email already exists in QR Code Generator.' });
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO users (id, name, email, phone, role_id, password, must_change_password, otp_enabled, status, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,true,$7,'active',NOW())
+         RETURNING *`,
+        [id, trimmedName, trimmedEmail, trimmedPhone, role || 'admin', tempPassword, otpFlag]
+      );
+      createdRow = rows[0];
+    }
 
     await dispatchNotification({
       toEmail: trimmedEmail,
@@ -393,7 +516,7 @@ apiRouter.post('/users', requireDb, async (req, res) => {
 
     return res.json({
       success: true,
-      user: mapUserRow(rows[0], false),
+      user: mapUserRow(createdRow, false),
       message: 'The user has Created Successfully and sent via that user email address',
     });
   } catch (err: any) {
@@ -401,7 +524,7 @@ apiRouter.post('/users', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.put('/users/:id', requireDb, async (req, res) => {
+apiRouter.put('/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, email, phone, role, status, otpEnabled } = req.body || {};
@@ -410,6 +533,20 @@ apiRouter.put('/users/:id', requireDb, async (req, res) => {
 
     if (!trimmedName || !trimmedEmail) {
       return res.status(400).json({ success: false, error: 'Name and email are required.' });
+    }
+
+    if (!isDatabaseReady) {
+      const dup = memoryStore.users.find((u) => !u.deleted_at && u.email.toLowerCase() === trimmedEmail && u.id !== id);
+      if (dup) return res.status(409).json({ success: false, error: 'Another active user already uses this email.' });
+      const target = memoryStore.users.find((u) => u.id === id && !u.deleted_at);
+      if (!target) return res.status(404).json({ success: false, error: 'User not found.' });
+      target.name = trimmedName;
+      target.email = trimmedEmail;
+      target.phone = String(phone || '').trim();
+      target.role_id = role || 'admin';
+      target.status = status === 'suspended' ? 'suspended' : 'active';
+      target.otp_enabled = Boolean(otpEnabled);
+      return res.json({ success: true, user: mapUserRow(target, false) });
     }
 
     const dup = await pool.query(
@@ -451,9 +588,15 @@ apiRouter.put('/users/:id', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/users/:id/toggle-otp', requireDb, async (req, res) => {
+apiRouter.post('/users/:id/toggle-otp', async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isDatabaseReady) {
+      const target = memoryStore.users.find((u) => u.id === id && !u.deleted_at);
+      if (!target) return res.status(404).json({ success: false, error: 'User not found.' });
+      target.otp_enabled = !target.otp_enabled;
+      return res.json({ success: true, user: mapUserRow(target, false) });
+    }
     const { rows } = await pool.query(
       `UPDATE users SET otp_enabled = NOT otp_enabled WHERE id = $1 AND deleted_at IS NULL RETURNING *`,
       [id]
@@ -465,18 +608,27 @@ apiRouter.post('/users/:id/toggle-otp', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/users/:id/reset-password', requireDb, async (req, res) => {
+apiRouter.post('/users/:id/reset-password', async (req, res) => {
   try {
     const { id } = req.params;
     const tempPassword = generate7DigitMixedPassword();
 
-    const { rows } = await pool.query(
-      `UPDATE users SET password = $1, must_change_password = true WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
-      [tempPassword, id]
-    );
-    if (rows.length === 0) return res.status(404).json({ success: false, error: 'User not found.' });
+    let user: any;
+    if (!isDatabaseReady) {
+      const target = memoryStore.users.find((u) => u.id === id && !u.deleted_at);
+      if (!target) return res.status(404).json({ success: false, error: 'User not found.' });
+      target.password = tempPassword;
+      target.must_change_password = true;
+      user = target;
+    } else {
+      const { rows } = await pool.query(
+        `UPDATE users SET password = $1, must_change_password = true WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
+        [tempPassword, id]
+      );
+      if (rows.length === 0) return res.status(404).json({ success: false, error: 'User not found.' });
+      user = rows[0];
+    }
 
-    const user = rows[0];
     await dispatchNotification({
       toEmail: user.email,
       toPhone: user.phone,
@@ -496,9 +648,22 @@ apiRouter.post('/users/:id/reset-password', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.delete('/users/:id', requireDb, async (req, res) => {
+apiRouter.delete('/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isDatabaseReady) {
+      const target = memoryStore.users.find((u) => u.id === id && !u.deleted_at);
+      if (!target) return res.status(404).json({ success: false, error: 'User not found.' });
+      if (target.role_id === 'super_admin') {
+        const activeSupers = memoryStore.users.filter((u) => u.role_id === 'super_admin' && !u.deleted_at);
+        if (activeSupers.length <= 1) {
+          return res.status(400).json({ success: false, error: 'Cannot delete the only active Super Admin.' });
+        }
+      }
+      target.deleted_at = new Date().toISOString();
+      return res.json({ success: true });
+    }
+
     const targetRes = await pool.query('SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (targetRes.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'User not found.' });
@@ -519,8 +684,14 @@ apiRouter.delete('/users/:id', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/users/:id/restore', requireDb, async (req, res) => {
+apiRouter.post('/users/:id/restore', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      const target = memoryStore.users.find((u) => u.id === req.params.id);
+      if (!target) return res.status(404).json({ success: false, error: 'User not found.' });
+      target.deleted_at = null;
+      return res.json({ success: true, user: mapUserRow(target, false) });
+    }
     const { rows } = await pool.query(
       'UPDATE users SET deleted_at = NULL WHERE id = $1 RETURNING *',
       [req.params.id]
@@ -533,11 +704,27 @@ apiRouter.post('/users/:id/restore', requireDb, async (req, res) => {
 });
 
 // ==================== ROLES ====================
-apiRouter.post('/roles', requireDb, async (req, res) => {
+apiRouter.post('/roles', async (req, res) => {
   try {
     const { name, description, privileges } = req.body || {};
     const trimmedName = String(name || '').trim();
     if (!trimmedName) return res.status(400).json({ success: false, error: 'Role name is required.' });
+
+    if (!isDatabaseReady) {
+      const existing = memoryStore.roles.find((r) => !r.deleted_at && r.name.toLowerCase() === trimmedName.toLowerCase());
+      if (existing) return res.status(409).json({ success: false, error: 'A role with this name already exists.' });
+      const created = {
+        id: `role_${Date.now()}`,
+        name: trimmedName,
+        description: description || '',
+        is_system: false,
+        privileges: privileges || {},
+        created_at: new Date().toISOString(),
+        deleted_at: null,
+      };
+      memoryStore.roles.push(created);
+      return res.json({ success: true, role: mapRoleRow(created) });
+    }
 
     const existing = await pool.query(
       'SELECT id FROM roles WHERE LOWER(name) = $1 AND deleted_at IS NULL',
@@ -558,9 +745,17 @@ apiRouter.post('/roles', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.put('/roles/:id', requireDb, async (req, res) => {
+apiRouter.put('/roles/:id', async (req, res) => {
   try {
     const { name, description, privileges } = req.body || {};
+    if (!isDatabaseReady) {
+      const target = memoryStore.roles.find((r) => r.id === req.params.id && !r.deleted_at);
+      if (!target) return res.status(404).json({ success: false, error: 'Role not found.' });
+      target.name = String(name || '').trim();
+      target.description = description || '';
+      target.privileges = privileges || {};
+      return res.json({ success: true, role: mapRoleRow(target) });
+    }
     const { rows } = await pool.query(
       `UPDATE roles SET name = $1, description = $2, privileges = $3::jsonb
        WHERE id = $4 AND deleted_at IS NULL RETURNING *`,
@@ -573,8 +768,17 @@ apiRouter.put('/roles/:id', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.delete('/roles/:id', requireDb, async (req, res) => {
+apiRouter.delete('/roles/:id', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      const target = memoryStore.roles.find((r) => r.id === req.params.id && !r.deleted_at);
+      if (!target) return res.status(404).json({ success: false, error: 'Role not found.' });
+      if (target.is_system || req.params.id === 'super_admin') {
+        return res.status(400).json({ success: false, error: 'Cannot delete the Super Admin system role.' });
+      }
+      target.deleted_at = new Date().toISOString();
+      return res.json({ success: true });
+    }
     const check = await pool.query('SELECT is_system FROM roles WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
     if (check.rows.length === 0) return res.status(404).json({ success: false, error: 'Role not found.' });
     if (check.rows[0].is_system || req.params.id === 'super_admin') {
@@ -587,8 +791,13 @@ apiRouter.delete('/roles/:id', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/roles/:id/restore', requireDb, async (req, res) => {
+apiRouter.post('/roles/:id/restore', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      const target = memoryStore.roles.find((r) => r.id === req.params.id);
+      if (target) target.deleted_at = null;
+      return res.json({ success: true });
+    }
     await pool.query('UPDATE roles SET deleted_at = NULL WHERE id = $1', [req.params.id]);
     return res.json({ success: true });
   } catch (err: any) {
@@ -597,11 +806,29 @@ apiRouter.post('/roles/:id/restore', requireDb, async (req, res) => {
 });
 
 // ==================== CATEGORIES ====================
-apiRouter.post('/categories', requireDb, async (req, res) => {
+apiRouter.post('/categories', async (req, res) => {
   try {
     const { name, icon, description, displayOrder } = req.body || {};
     const trimmed = String(name || '').trim();
     if (!trimmed) return res.status(400).json({ success: false, error: 'Category name is required.' });
+    const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    if (!isDatabaseReady) {
+      const existing = memoryStore.categories.find((c) => !c.deleted_at && c.name.toLowerCase() === trimmed.toLowerCase());
+      if (existing) return res.status(409).json({ success: false, error: 'A category with this name already exists.' });
+      const created = {
+        id: `cat_${Date.now()}`,
+        name: trimmed,
+        slug,
+        icon: icon || 'Globe',
+        description: description || '',
+        display_order: displayOrder ?? 1,
+        created_at: new Date().toISOString(),
+        deleted_at: null,
+      };
+      memoryStore.categories.push(created);
+      return res.json({ success: true, category: mapCategoryRow(created) });
+    }
 
     const existing = await pool.query(
       'SELECT id FROM categories WHERE LOWER(name) = $1 AND deleted_at IS NULL',
@@ -611,7 +838,6 @@ apiRouter.post('/categories', requireDb, async (req, res) => {
       return res.status(409).json({ success: false, error: 'A category with this name already exists.' });
     }
 
-    const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const { rows } = await pool.query(
       `INSERT INTO categories (id, name, slug, icon, description, display_order, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,NOW()) RETURNING *`,
@@ -623,11 +849,23 @@ apiRouter.post('/categories', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.put('/categories/:id', requireDb, async (req, res) => {
+apiRouter.put('/categories/:id', async (req, res) => {
   try {
     const { name, icon, description, displayOrder } = req.body || {};
     const trimmed = String(name || '').trim();
     const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    if (!isDatabaseReady) {
+      const target = memoryStore.categories.find((c) => c.id === req.params.id && !c.deleted_at);
+      if (!target) return res.status(404).json({ success: false, error: 'Category not found.' });
+      target.name = trimmed;
+      target.slug = slug;
+      target.icon = icon || 'Globe';
+      target.description = description || '';
+      target.display_order = displayOrder ?? 1;
+      return res.json({ success: true, category: mapCategoryRow(target) });
+    }
+
     const { rows } = await pool.query(
       `UPDATE categories SET name = $1, slug = $2, icon = $3, description = $4, display_order = $5
        WHERE id = $6 AND deleted_at IS NULL RETURNING *`,
@@ -640,8 +878,13 @@ apiRouter.put('/categories/:id', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.delete('/categories/:id', requireDb, async (req, res) => {
+apiRouter.delete('/categories/:id', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      const target = memoryStore.categories.find((c) => c.id === req.params.id);
+      if (target) target.deleted_at = new Date().toISOString();
+      return res.json({ success: true });
+    }
     await pool.query('UPDATE categories SET deleted_at = NOW() WHERE id = $1', [req.params.id]);
     return res.json({ success: true });
   } catch (err: any) {
@@ -649,8 +892,13 @@ apiRouter.delete('/categories/:id', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/categories/:id/restore', requireDb, async (req, res) => {
+apiRouter.post('/categories/:id/restore', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      const target = memoryStore.categories.find((c) => c.id === req.params.id);
+      if (target) target.deleted_at = null;
+      return res.json({ success: true });
+    }
     await pool.query('UPDATE categories SET deleted_at = NULL WHERE id = $1', [req.params.id]);
     return res.json({ success: true });
   } catch (err: any) {
@@ -659,20 +907,47 @@ apiRouter.post('/categories/:id/restore', requireDb, async (req, res) => {
 });
 
 // ==================== QR CODES & SCANS ====================
-apiRouter.post('/qr-codes', requireDb, async (req, res) => {
+apiRouter.post('/qr-codes', async (req, res) => {
   try {
     const qr = req.body || {};
+    if (!isDatabaseReady) {
+      const row = {
+        id: qr.id || `qr_${Date.now()}`,
+        restaurant_id: qr.restaurantId || 'company_qr_01',
+        category_id: qr.categoryId || null,
+        title: qr.title || 'Dynamic QR Code',
+        description: qr.description || '',
+        cta_label: qr.ctaLabel || 'See More',
+        type: qr.type || 'website',
+        target_url: qr.targetUrl || '',
+        table_number: qr.tableNumber ?? null,
+        short_url: qr.shortUrl || '',
+        scans_count: Number(qr.scansCount || 0),
+        status: qr.status || 'active',
+        created_at: qr.createdAt || new Date().toISOString(),
+        expires_at: qr.expiresAt || null,
+        styling: qr.styling || {},
+        welcome_screen: qr.welcomeScreen || null,
+        uploaded_files: Array.isArray(qr.uploadedFiles) ? qr.uploadedFiles : [],
+        deleted_at: null,
+      };
+      memoryStore.qrCodes.unshift(row);
+      return res.json({ success: true, qrCode: mapQRRow(row) });
+    }
+
     const { rows } = await pool.query(
-      `INSERT INTO qr_codes (id, restaurant_id, category_id, title, type, target_url, table_number, short_url, scans_count, status, created_at, expires_at, styling, welcome_screen)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)
+      `INSERT INTO qr_codes (id, restaurant_id, category_id, title, description, cta_label, type, target_url, table_number, short_url, scans_count, status, created_at, expires_at, styling, welcome_screen, uploaded_files)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb)
        RETURNING *`,
       [
         qr.id || `qr_${Date.now()}`,
         qr.restaurantId || 'company_qr_01',
         qr.categoryId || null,
         qr.title || 'Dynamic QR Code',
+        qr.description || '',
+        qr.ctaLabel || 'See More',
         qr.type || 'website',
-        qr.targetUrl || 'https://qrcodegenerator.io',
+        qr.targetUrl || '',
         qr.tableNumber ?? null,
         qr.shortUrl || '',
         Number(qr.scansCount || 0),
@@ -681,6 +956,7 @@ apiRouter.post('/qr-codes', requireDb, async (req, res) => {
         qr.expiresAt || null,
         JSON.stringify(qr.styling || {}),
         qr.welcomeScreen ? JSON.stringify(qr.welcomeScreen) : null,
+        JSON.stringify(Array.isArray(qr.uploadedFiles) ? qr.uploadedFiles : []),
       ]
     );
     return res.json({ success: true, qrCode: mapQRRow(rows[0]) });
@@ -689,34 +965,59 @@ apiRouter.post('/qr-codes', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.put('/qr-codes/:id', requireDb, async (req, res) => {
+apiRouter.put('/qr-codes/:id', async (req, res) => {
   try {
     const qr = req.body || {};
+    if (!isDatabaseReady) {
+      const target = memoryStore.qrCodes.find((q) => q.id === req.params.id && !q.deleted_at);
+      if (!target) return res.status(404).json({ success: false, error: 'QR Code not found.' });
+      target.category_id = qr.categoryId || null;
+      target.title = qr.title;
+      target.description = qr.description || '';
+      target.cta_label = qr.ctaLabel || 'See More';
+      target.type = qr.type;
+      target.target_url = qr.targetUrl || '';
+      target.table_number = qr.tableNumber ?? null;
+      target.short_url = qr.shortUrl || '';
+      target.status = qr.status || 'active';
+      target.expires_at = qr.expiresAt || null;
+      target.styling = qr.styling || {};
+      target.welcome_screen = qr.welcomeScreen || null;
+      target.uploaded_files = Array.isArray(qr.uploadedFiles) ? qr.uploadedFiles : [];
+      return res.json({ success: true, qrCode: mapQRRow(target) });
+    }
+
     const { rows } = await pool.query(
       `UPDATE qr_codes
        SET category_id = $1,
            title = $2,
-           type = $3,
-           target_url = $4,
-           table_number = $5,
-           short_url = $6,
-           status = $7,
-           expires_at = $8,
-           styling = $9::jsonb,
-           welcome_screen = $10::jsonb
-       WHERE id = $11 AND deleted_at IS NULL
+           description = $3,
+           cta_label = $4,
+           type = $5,
+           target_url = $6,
+           table_number = $7,
+           short_url = $8,
+           status = $9,
+           expires_at = $10,
+           styling = $11::jsonb,
+           welcome_screen = $12::jsonb,
+           uploaded_files = $13::jsonb
+       WHERE id = $14 AND deleted_at IS NULL
        RETURNING *`,
       [
         qr.categoryId || null,
         qr.title,
+        qr.description || '',
+        qr.ctaLabel || 'See More',
         qr.type,
-        qr.targetUrl,
+        qr.targetUrl || '',
         qr.tableNumber ?? null,
         qr.shortUrl || '',
         qr.status || 'active',
         qr.expiresAt || null,
         JSON.stringify(qr.styling || {}),
         qr.welcomeScreen ? JSON.stringify(qr.welcomeScreen) : null,
+        JSON.stringify(Array.isArray(qr.uploadedFiles) ? qr.uploadedFiles : []),
         req.params.id,
       ]
     );
@@ -727,8 +1028,13 @@ apiRouter.put('/qr-codes/:id', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.delete('/qr-codes/:id', requireDb, async (req, res) => {
+apiRouter.delete('/qr-codes/:id', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      const target = memoryStore.qrCodes.find((q) => q.id === req.params.id);
+      if (target) target.deleted_at = new Date().toISOString();
+      return res.json({ success: true });
+    }
     await pool.query('UPDATE qr_codes SET deleted_at = NOW() WHERE id = $1', [req.params.id]);
     return res.json({ success: true });
   } catch (err: any) {
@@ -736,8 +1042,13 @@ apiRouter.delete('/qr-codes/:id', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/qr-codes/:id/restore', requireDb, async (req, res) => {
+apiRouter.post('/qr-codes/:id/restore', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      const target = memoryStore.qrCodes.find((q) => q.id === req.params.id);
+      if (target) target.deleted_at = null;
+      return res.json({ success: true });
+    }
     await pool.query('UPDATE qr_codes SET deleted_at = NULL WHERE id = $1', [req.params.id]);
     return res.json({ success: true });
   } catch (err: any) {
@@ -745,9 +1056,26 @@ apiRouter.post('/qr-codes/:id/restore', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/qr-codes/:id/scan', requireDb, async (req, res) => {
+apiRouter.post('/qr-codes/:id/scan', async (req, res) => {
   try {
     const { device } = req.body || {};
+    if (!isDatabaseReady) {
+      const qr = memoryStore.qrCodes.find((q) => q.id === req.params.id && !q.deleted_at);
+      if (!qr) return res.status(404).json({ success: false, error: 'QR Code not found.' });
+      qr.scans_count = Number(qr.scans_count || 0) + 1;
+      qr.last_scan_at = new Date().toISOString();
+      memoryStore.scanEvents.unshift({
+        id: `scan_${Date.now()}`,
+        qr_id: qr.id,
+        qr_title: qr.title,
+        timestamp: new Date().toISOString(),
+        device: device || 'Mobile',
+        city: 'Addis Ababa, ET',
+      });
+      memoryStore.scanEvents = memoryStore.scanEvents.slice(0, 300);
+      return res.json({ success: true, qrCode: mapQRRow(qr) });
+    }
+
     const { rows } = await pool.query(
       `UPDATE qr_codes
        SET scans_count = scans_count + 1, last_scan_at = NOW()
@@ -771,8 +1099,12 @@ apiRouter.post('/qr-codes/:id/scan', requireDb, async (req, res) => {
 });
 
 // ==================== SETTINGS & RESET ====================
-apiRouter.put('/settings/theme', requireDb, async (req, res) => {
+apiRouter.put('/settings/theme', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      memoryStore.appSettings.theme = req.body;
+      return res.json({ success: true });
+    }
     await pool.query(
       `INSERT INTO app_settings (key, value, updated_at)
        VALUES ('theme', $1::jsonb, NOW())
@@ -785,8 +1117,12 @@ apiRouter.put('/settings/theme', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.put('/settings/company', requireDb, async (req, res) => {
+apiRouter.put('/settings/company', async (req, res) => {
   try {
+    if (!isDatabaseReady) {
+      memoryStore.appSettings.company_profile = req.body;
+      return res.json({ success: true });
+    }
     await pool.query(
       `INSERT INTO app_settings (key, value, updated_at)
        VALUES ('company_profile', $1::jsonb, NOW())
@@ -799,8 +1135,12 @@ apiRouter.put('/settings/company', requireDb, async (req, res) => {
   }
 });
 
-apiRouter.post('/admin/reset-defaults', requireDb, async (_req, res) => {
+apiRouter.post('/admin/reset-defaults', async (_req, res) => {
   try {
+    if (!isDatabaseReady) {
+      resetMemoryStore();
+      return res.json({ success: true });
+    }
     await pool.query('TRUNCATE TABLE otps, notification_logs, scan_events, qr_codes, categories, users, roles, app_settings');
     await seedInitialData();
     return res.json({ success: true });

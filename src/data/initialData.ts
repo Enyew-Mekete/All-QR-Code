@@ -13,7 +13,7 @@ export const INITIAL_RESTAURANT: RestaurantProfile = {
   currencySymbol: '$',
   currencyCode: 'USD',
   taxRatePercent: 8.5,
-  logoUrl: './assets/guansa_logo.png',
+  logoUrl: '/assets/guansa_logo.png',
   coverImageUrl: '/src/assets/images/menu_artisan_pizza_1793349863039.jpg',
   themeColor: '#059669',
   welcomeMessage: 'Welcome! Access instant links, digital menus, channels, and business directories.',
@@ -26,12 +26,12 @@ export const INITIAL_RESTAURANT: RestaurantProfile = {
   uploadedMenuFiles: [
     {
       id: 'menu_sheet_official',
-      name: 'Official Digital Menu Sheet.png',
+      name: 'Guansa Coffee Hub Menu.png',
       type: 'image',
-      url: './assets/guansa_menu_sheet.png',
-      sizeFormatted: '1.8 MB (HD)',
+      url: '/assets/guansa_menu_card.png',
+      sizeFormatted: '652 × 922 HD',
       uploadedAt: '2026-10-29T18:30:00Z',
-      caption: 'Digital Menu Lookbook',
+      caption: "Guansa Ma'ed Digital Menu",
     },
   ],
 };

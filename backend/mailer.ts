@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { pool, isDatabaseReady } from './db.ts';
+import { pool, isDatabaseReady, memoryStore } from './db.ts';
 
 export const SENDER_EMAIL = process.env.SMTP_USER || 'enyewmekete65@gmail.com';
 export const SENDER_PHONE = process.env.SMS_SENDER_PHONE || '+251943305937';
@@ -151,6 +151,20 @@ export async function dispatchNotification(params: {
     } catch (err) {
       console.error('[DB] Failed to insert notification_log:', err);
     }
+  } else {
+    memoryStore.notificationLogs.unshift({
+      id: logRecord.id,
+      timestamp: logRecord.timestamp,
+      from_email: logRecord.fromEmail,
+      from_phone: logRecord.fromPhone,
+      to_email: logRecord.toEmail,
+      to_phone: logRecord.toPhone,
+      subject: logRecord.subject,
+      message: logRecord.message,
+      type: logRecord.type,
+      status: logRecord.status,
+    });
+    memoryStore.notificationLogs = memoryStore.notificationLogs.slice(0, 100);
   }
 
   return logRecord;
